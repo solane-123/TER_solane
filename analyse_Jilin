@@ -38,6 +38,7 @@ with rasterio.open(image_path) as src:
     print(f"- Driver: {src.driver}")
     print(f"- NoData: {src.nodata}")
 
+print("tout va bien, l'image est chargée.")s
 
 # --- VISUALISATION DE LUMINANCE ---
 # Si l'image a plusieurs bandes, on peut en faire une moyenne simple
