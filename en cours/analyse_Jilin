@@ -1,0 +1,324 @@
+#charger l'image satellite (GeoTIFF)
+
+
+import rasterio
+import numpy as np
+import matplotlib.pyplot as plt
+import folium
+from rasterio.plot import reshape_as_image
+from rasterio.enums import Resampling
+from rasterio.warp import transform_bounds
+
+# Charger l'image satellite
+image_path='Ortho_nocturne_CG_20200325.tif'
+
+with rasterio.open(image_path) as src:
+    # Lire les données de l'image
+    image_data = src.read()
+    # Lire les métadonnées
+    metadata = src.meta
+    # Lire la transformation affine
+    transform = src.transform
+    # Lire les coordonnées du système de référence
+    crs = src.crs
+
+#ouvrir l'image satellite
+with rasterio.open(image_path) as src:
+    print("Infos raster:")
+    print(f"- CRS: {src.crs}")
+    print(f"- Bounds: {src.bounds}")
+    print(f"- Nombre de bandes: {src.count}")
+    
+    image = src.read(out_dtype='float32')  # (bands, height, width)
+    profile = src.profile
+    print(f"- Dimensions: {image.shape}")
+    print(f"- Type de données: {image.dtype}")
+    print(f"- Résolution: {src.res}")
+    print(f"- Transform: {src.transform}")
+    print(f"- Driver: {src.driver}")
+    print(f"- NoData: {src.nodata}")
+
+print("tout va bien, l'image est chargée.")s
+
+# --- VISUALISATION DE LUMINANCE ---
+# Si l'image a plusieurs bandes, on peut en faire une moyenne simple
+if image.shape[0] >= 3:
+    luminance = np.mean(image[:3], axis=0)  # Moyenne des 3 premières bandes
+else:
+    luminance = image[0]  # Image mono-bande
+
+# Normalisation pour l'affichage
+luminance_norm = (luminance - np.min(luminance)) / (np.max(luminance) - np.min(luminance))
+
+plt.figure(figsize=(10, 6))
+plt.imshow(luminance_norm, cmap='inferno')
+plt.title("Luminance (Normalisée) - Indice de Pollution Lumineuse")
+plt.colorbar(label='Intensité lumineuse (relative)')
+plt.axis('off')
+plt.show()
+
+# --- GÉNÉRATION DE LA CARTE FOLIUM ---
+# Calcul du centre géographique de l'image
+left, bottom, right, top = transform_bounds(src.crs, "EPSG:4326", *src.bounds)
+center_lat = (top + bottom) / 2
+center_lon = (left + right) / 2
+
+m = folium.Map(location=[center_lat, center_lon], zoom_start=14)
+
+# Ajout de la couche raster comme image overlay (basique)
+# Pour une vraie intégration avec transparence etc., il faut la convertir en tiles ou PNG géoréférencée
+folium.raster_layers.ImageOverlay(
+    image=luminance_norm,
+    bounds=[[bottom, left], [top, right]],
+    opacity=0.6,
+    colormap=lambda x: (x, 0, 0),  # teinte rouge selon intensité
+).add_to(m)
+
+folium.LayerControl().add_to(m)
+m.save("map.html")  # Enregistrer la carte dans un fichier HTML
+# Afficher la carte
+m
+# --- ANALYSE DES POLLUTIONS ---
+# Ici, on peut ajouter des analyses spécifiques sur les données de pollution lumineuse
+# Par exemple, on peut calculer des statistiques sur la luminance
+mean_luminance = np.mean(luminance)
+std_luminance = np.std(luminance)
+print(f"Moyenne de luminance: {mean_luminance}")
+print(f"Écart-type de luminance: {std_luminance}")
+# On peut aussi définir des seuils pour identifier les zones de pollution lumineuse
+# Par exemple, on peut considérer que les zones avec une luminance supérieure à un certain seuil sont polluées
+threshold = 0.5  # seuil arbitraire
+polluted_areas = luminance > threshold
+# Afficher les zones polluées
+plt.figure(figsize=(10, 6))
+plt.imshow(polluted_areas, cmap='gray')
+plt.title("Zones Polluées (Luminance > Seuil)")
+plt.colorbar(label='Pollution lumineuse')
+plt.axis('off')
+plt.show()
+
+# --- EXPORTER LES ZONES POLLUÉES ---
+# On peut exporter les zones polluées sous forme de GeoTIFF
+from rasterio import open as rio_open
+from rasterio.transform import from_origin
+from rasterio.enums import Resampling
+# Créer un nouveau fichier GeoTIFF pour les zones polluées
+output_path = 'polluted_areas.tif'
+with rio_open(
+    output_path,
+    'w',
+    driver='GTiff',
+    height=polluted_areas.shape[0],
+    width=polluted_areas.shape[1],
+    count=1,
+    dtype='uint8',
+    crs=src.crs,
+    transform=src.transform,
+) as dst:
+    dst.write(polluted_areas.astype('uint8'), 1)
+    dst.nodata = 0  # définir la valeur NoData
+    dst.update_tags(1, description='Polluted Areas')
+print(f"Zones polluées exportées vers {output_path}")
+
+# Pour empiler plusieurs images si elles sont alignées géographiquement :
+from rasterio.merge import merge
+
+srcs = [rasterio.open(path) for path in ['img1.tif', 'img2.tif']]
+mosaic, out_trans = merge(srcs)
+# Enregistrer le mosaic
+with rasterio.open('mosaic.tif', 'w', driver='GTiff',
+                   height=mosaic.shape[1],
+                   width=mosaic.shape[2],
+                   count=mosaic.shape[0],
+                   dtype=mosaic.dtype,
+                   crs=srcs[0].crs,
+) as dst:
+    dst.write(mosaic)
+    dst.transform
+    dst.update_tags(1, description='Mosaic of Images')
+    dst.nodata = 0  # définir la valeur NoData
+
+# --- ANALYSE DES POLLUTIONS AVANCÉES ---
+# On peut aussi appliquer des algorithmes de segmentation pour identifier les zones de pollution lumineuse plus précisément
+# Par exemple, on peut utiliser un algorithme de seuillage adaptatif
+from skimage.filters import threshold_otsu
+from skimage import measure
+# Calculer le seuil Otsu
+thresh = threshold_otsu(luminance)
+# Appliquer le seuillage
+binary = luminance > thresh
+# Labeliser les régions connectées
+labels = measure.label(binary)
+# Afficher les régions détectées
+plt.figure(figsize=(10, 6))
+plt.imshow(labels, cmap='nipy_spectral')
+plt.title("Régions de Pollution Lumineuse (Segmentation)")
+plt.colorbar(label='Régions')
+plt.axis('off')
+plt.show()
+# Exporter les régions détectées
+output_path = 'segmented_pollution.tif'
+with rio_open(
+    output_path,
+    'w',
+    driver='GTiff',
+    height=labels.shape[0],
+    width=labels.shape[1],
+    count=1,
+    dtype='uint8',
+    crs=src.crs,
+    transform=src.transform,
+) as dst:
+    dst.write(labels.astype('uint8'), 1)
+    dst.nodata = 0  # définir la valeur NoData
+    dst.update_tags(1, description='Segmented Pollution Areas')
+print(f"Régions de pollution exportées vers {output_path}")
+# --- EXPORTER LES RÉSULTATS ---
+# On peut aussi exporter les résultats sous forme de CSV ou de shapefile
+import geopandas as gpd
+from shapely.geometry import box
+# Créer un GeoDataFrame pour les zones polluées
+gdf = gpd.GeoDataFrame(
+    {'geometry': [box(left, bottom, right, top)]},
+    crs=src.crs.to_proj4()
+)
+# Exporter en shapefile
+gdf.to_file('polluted_areas.shp', driver='ESRI Shapefile')
+# Exporter en CSV
+gdf.to_csv('polluted_areas.csv', index=False)
+
+
+# --- ANALYSE VEGETATION ---
+# On peut aussi analyser la végétation à partir de l'image
+## Ouvre l'image satellite RGB
+image_path = "Ortho_nocturne_CG_20200325.tif"  # ou ton image LuoJia si c'est RGB
+with rasterio.open(image_path) as src:
+    image = src.read()  # (bands, height, width)
+    profile = src.profile
+    print(f"Bands: {image.shape[0]}")
+    print(f"Dimensions: {image.shape[1]} x {image.shape[2]}")
+    print(f"Type de données: {image.dtype}")
+    print(f"Résolution: {src.res}")
+    print(f"Transform: {src.transform}")
+    print(f"Driver: {src.driver}")
+    print(f"NoData: {src.nodata}")
+
+# --- vérification des bandes ---
+if image.shape[0] < 3:
+    raise ValueError("Image ne contient pas les 3 bandes RGB nécessaires.")
+
+# Normalisation des bandes (entre 0 et 1)
+r = image[0].astype(np.float32)
+g = image[1].astype(np.float32)
+b = image[2].astype(np.float32)
+
+r_norm = r / (r.max() + 1e-6)
+g_norm = g / (g.max() + 1e-6)
+b_norm = b / (b.max() + 1e-6)
+
+# --- Calcul des incices de végétation ---
+# Calcul de l'indice de végétation NDVI
+ndvi = (r_norm - b_norm) / (r_norm + b_norm + 1e-6)
+# Normalisation pour l'affichage
+ndvi_norm = (ndvi - np.min(ndvi)) / (np.max(ndvi) - np.min(ndvi))
+plt.figure(figsize=(10, 6))
+plt.imshow(ndvi_norm, cmap='RdYlGn')
+plt.title("NDVI (Normalisé) - Indice de Végétation")
+plt.colorbar(label='Indice de Végétation (NDVI)')
+plt.axis('off')
+plt.show()
+# --- GÉNÉRATION DE LA CARTE FOLIUM ---
+# Calcul du centre géographique de l'image
+left, bottom, right, top = transform_bounds(src.crs, "EPSG:4326", *src.bounds)
+center_lat = (top + bottom) / 2
+center_lon = (left + right) / 2
+m = folium.Map(location=[center_lat, center_lon], zoom_start=14)
+# Ajout de la couche raster comme image overlay (basique)
+folium.raster_layers.ImageOverlay(
+    image=ndvi_norm,
+    bounds=[[bottom, left], [top, right]],
+    opacity=0.6,
+    colormap=lambda x: (0, x, 0),  # teinte verte selon intensité
+).add_to(m)
+folium.LayerControl().add_to(m)
+m.save("ndvi_map.html")  # Enregistrer la carte dans un fichier HTML
+# Afficher la carte
+m
+
+# ExG: Excess Green Index
+exg = 2 * g_norm - r_norm - b_norm
+
+# GLI: Green Leaf Index
+gli = (2 * g_norm - r_norm - b_norm) / (2 * g_norm + r_norm + b_norm + 1e-6)
+
+# --- Affichage des résultats ---
+fig, axs = plt.subplots(1, 2, figsize=(14, 6))
+
+axs[0].imshow(exg, cmap='Greens')
+axs[0].set_title("ExG - Indice 'Excess Green'")
+axs[0].axis('off')
+
+axs[1].imshow(gli, cmap='YlGn')
+axs[1].set_title("GLI - Green Leaf Index")
+axs[1].axis('off')
+
+plt.tight_layout()
+plt.show()
+
+# --- EXPORTER LES RÉSULTATS ---
+# Exporter les indices de végétation sous forme de GeoTIFF
+output_path_exg = 'exg.tif'
+with rio_open(
+    output_path_exg,
+    'w',
+    driver='GTiff',
+    height=exg.shape[0],
+    width=exg.shape[1],
+    count=1,
+    dtype='float32',
+    crs=src.crs,
+    transform=src.transform,
+) as dst:
+    dst.write(exg.astype('float32'), 1)
+    dst.nodata = 0  # définir la valeur NoData
+    dst.update_tags(1, description='ExG Index')
+print(f"ExG exporté vers {output_path_exg}")
+output_path_gli = 'gli.tif'
+with rio_open(
+    output_path_gli,
+    'w',
+    driver='GTiff',
+    height=gli.shape[0],
+    width=gli.shape[1],
+    count=1,
+    dtype='float32',
+    crs=src.crs,
+    transform=src.transform,
+) as dst:
+    dst.write(gli.astype('float32'), 1)
+    dst.nodata = 0  # définir la valeur NoData
+    dst.update_tags(1, description='GLI Index')
+print(f"GLI exporté vers {output_path_gli}")
+
+
+# --- ANALYSE POLUTION ET VEGETATION ---
+# On peut aussi croiser les données de pollution lumineuse et de végétation
+# Par exemple, on peut calculer la corrélation entre les deux indices
+# Calculer la corrélation entre NDVI et luminance
+corr_ndvi_luminance = np.corrcoef(ndvi.flatten(), luminance.flatten())[0, 1]
+print(f"Corrélation entre NDVI et luminance: {corr_ndvi_luminance}")
+# On peut aussi visualiser la relation entre les deux indices
+plt.figure(figsize=(8, 6))
+plt.scatter(ndvi.flatten(), luminance.flatten(), alpha=0.5)
+plt.title("Relation entre NDVI et Luminance")
+plt.xlabel("NDVI")
+plt.ylabel("Luminance")
+plt.grid()
+plt.show()
+# --- EXPORTER LES RÉSULTATS ---
+# Exporter la corrélation entre NDVI et luminance
+output_path_corr = 'corr_ndvi_luminance.csv'
+np.savetxt(output_path_corr, [corr_ndvi_luminance], delimiter=',', header='Corrélation entre NDVI et luminance')
+print(f"Corrélation exportée vers {output_path_corr}")
+
+

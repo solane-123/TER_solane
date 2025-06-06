@@ -1,0 +1,378 @@
+import overpy
+import folium
+
+#initiliser l'API Overpass
+api = overpy.Overpass()
+
+#définir la requête Overpass pour les lampadaires à Strasbourg
+query = """
+[out:json][timeout:25];
+area["name"="Strasbourg"]["admin_level"="8"]->.searchArea;
+(
+  node["highway"="street_lamp"](area.searchArea);
+);
+out body;
+"""
+#exécuter la requête 
+result = api.query(query)
+
+#extraire les lampadaires de la réponse
+lampadaires = []
+for node in result.nodes:
+    lampadaire = {
+        "id": node.id,
+        "latitude": node.lat,
+        "longitude": node.lon,
+        "tags": node.tags
+    }
+    lampadaires.append(lampadaire)
+#afficher le nombre de lampadaires trouvés
+print(f"Nombre de lampadaires trouvés : {len(lampadaires)}")
+#créer une carte centrée sur Strasbourg
+map_strasbourg = folium.Map(location=[48.5734, 7.7521], zoom_start=13)
+m = folium.Map(location=[48.5734, 7.7521], zoom_start=13)
+
+#ajouter les lampadaires à la carte
+for lampadaire in lampadaires:
+    folium.Marker(
+        location=[lampadaire["latitude"], lampadaire["longitude"]],
+        popup=f"ID: {lampadaire['id']}",
+        icon=folium.Icon(color="blue", icon="info-sign"),
+        fill_opacity=0.6,
+    ).add_to(m)
+#enregistrer la carte dans un fichier HTML
+m.save("lampadaires_strasbourg.html")
+
+#enregistrer les lampadaires dans un fichier CSV
+import pandas as pd
+df = pd.DataFrame(lampadaires)
+df.to_csv("lampadaires_strasbourg.csv", index=False)
+
+#enregistrer les lampadaires dans un fichier GeoJSON
+import geopandas as gpd
+from shapely.geometry import Point
+# Créer une liste de dictionnaires pour les lampadaires
+lampadaires = []
+for node in result.nodes:
+    lampadaire = {
+        "id": node.id,
+        "latitude": node.lat,
+        "longitude": node.lon,
+        "tags": node.tags
+    }
+    lampadaires.append(lampadaire)
+# Créer un DataFrame à partir de la liste de lampadaires
+df = pd.DataFrame(lampadaires)
+# Créer une carte centrée sur Strasbourg
+map_strasbourg = folium.Map(location=[48.5734, 7.7521], zoom_start=13)
+# Ajouter les lampadaires à la carte
+for lampadaire in lampadaires:
+    folium.Marker(
+        location=[lampadaire["latitude"], lampadaire["longitude"]],
+        popup=f"ID: {lampadaire['id']}",
+        icon=folium.Icon(color="blue", icon="info-sign"),
+        fill_opacity=0.6,
+    ).add_to(map_strasbourg)
+# Enregistrer la carte dans un fichier HTML
+map_strasbourg.save("lampadaires_strasbourg.html")
+
+# Enregistrer les lampadaires dans un fichier CSV
+df.to_csv("lampadaires_strasbourg.csv", index=False)
+# Enregistrer les lampadaires dans un fichier GeoJSON
+gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.longitude, df.latitude))
+gdf.to_file("lampadaires_strasbourg.geojson", driver="GeoJSON")
+# Enregistrer les lampadaires dans un fichier GeoPackage
+gdf.to_file("lampadaires_strasbourg.gpkg", driver="GPKG")
+# Enregistrer les lampadaires dans un fichier Shapefile
+gdf.to_file("lampadaires_strasbourg.shp", driver="ESRI Shapefile")
+
+
+
+#charger le fichier HTML
+with open("lampadaires_strasbourg.html", "r", encoding="utf-8") as f:
+    soup = BeautifulSoup(f, "html.parser")
+
+#extraire les balises <script> contenant les données
+script_tags = soup.find_all("script")
+
+#trouver toutes les tables dans le HTML
+tables = soup.find_all("table")
+
+#vérifier si des tables ont été trouvées
+if tables:
+    #extraire les données de la première table
+    table = tables[0]
+    rows = table.find_all("tr")
+    data = []
+    for row in rows:
+        cols = row.find_all("td")
+        cols = [ele.text.strip() for ele in cols]
+        data.append([ele for ele in cols if ele])  # get rid of empty values
+    #convertir les données en DataFrame
+    df = pd.DataFrame(data)
+
+    #enregistrer le DataFrame dans un fichier CSV
+    df.to_csv("lampadaires_strasbourg_extrait.csv", index=False)
+else:
+    print("Aucune table trouvée dans le fichier HTML.")
+
+# Afficher le DataFrame
+print(df.head())
+
+
+#données des sites évolville sous forme de chaîne de caractères
+data = """
+num_carre_VC;site_VC;num_site_evolville;x;y
+670723;Z4;1;7.803194;48.607611
+670723;Z3;2;7.804944;48.605778
+670703;Z3;4;7.807417;48.613417
+670703;Z4;5;7.804361;48.611417
+670723;Z5;6;7.797556;48.609306
+670721;Z8;10;7.756666667;48.59641667
+670741;Z7;11;7.758444;48.593167
+670701;Z5;18;7.762972222;48.61536111
+670741;Z8;21;7.7584161;48.5931242
+670742;Z6;23;7.764083;48.578944
+670742;Z7;24;7.762611;48.575444
+670828;Z2;27;7.76825;48.513944
+670720;Z8;30;7.724778;48.600361
+670762;Z14;32;7.779278;48.572306
+670762;Z3;33;7.785583;48.570722
+670762;Z8;34;7.792472;48.568278
+670762;Z9;35;7.792472;48.568278
+670762;Z10;36;7.797833;48.557917
+670762;Z11;37;7.796361;48.555611
+670762;Z6;40;7.785167;48.559278
+670783;Z4;43;7.772194;48.555861
+670783;Z7;44;7.767722;48.5565
+670762;Z5;45;7.764583;48.557472
+670782;Z6;46;7.754556;48.557611
+670742;Z8;49;7.765056;48.584222
+670742;Z5;55;7.789222;48.588806
+670762;Z7;56;7.786278;48.573722
+670855;Z1;58;7.753528;48.49925
+670723;Z2;59;7.79875;48.595417
+670827;Z4;61;7.742528;48.513028
+670722;Z6;62;7.774278;48.593056
+670780;Z1;63;7.703944444;48.55555556
+670783;Z2;65;7.779639;48.556083
+670783;Z5;66;7.7744246;48.5495151
+670783;Z8;67;7.779639;48.549917
+670783;Z9;68;7.779639;48.549917
+670720;Z9;70;7.711694444;48.60786111
+670804;Z4;72;7.740417;48.530111
+670742;Z9;74;7.768472;48.582417
+670742;Z10;75;7.767917;48.580806
+670782;Z7;78;7.748944;48.547611
+670742;Z11;79;7.775556;48.575028
+670783;Z6;81;7.758889;48.545444
+670782;Z5;85;7.754028;48.55025
+670760;Z7;87;7.717;48.566278
+670761;Z8;88;7.750806;48.5735
+670761;Z9;89;7.754333;48.573028
+670742;Z4;90;7.777972;48.583889
+670761;Z7;91;7.7420705;48.5727835
+670721;Z9;92;7.759611111;48.60277778
+670720;Z7;94;7.7137314;48.6089285
+670720;Z10;95;7.713138889;48.60663889
+670719;Z7;96;7.708639;48.604889
+670760;Z6;97;7.7209715;48.573248
+670760;Z8;99;7.714167;48.561806
+670720;Z11;103;7.721694444;48.60005556
+670762;Z13;104;7.806222;48.569
+670742;Z3;105;7.780028;48.589917
+670762;Z4;106;7.791889;48.572611
+NA;NA;107;7.782416667;48.51716667
+"""
+
+# Convertir les données en DataFrame
+import io
+data_io = io.StringIO(data)
+df_sites = pd.read_csv(data_io, sep=";")
+
+#Supprimer les lignes avec des valeurs manquantes
+df_sites = df_sites.dropna()
+
+# Convertir les colonnes x et y en float
+df_sites["x"] = df_sites["x"].astype(float)
+df_sites["y"] = df_sites["y"].astype(float)
+
+# créer une carte centrée sur Strasbourg
+map_sites = folium.Map(location=[48.5734, 7.7521], zoom_start=13)
+# ajouter les sites à la carte
+for index, row in df_sites.iterrows():
+    folium.Marker(
+        location=[row["y"], row["x"]],
+        popup=f"Site: {row['site_VC']}, Num: {row['num_site_evolville']}",
+        icon=folium.Icon(color="green", icon="info-sign"),
+        fill_opacity=0.6,
+    ).add_to(map_sites)
+
+# enregistrer la carte dans un fichier HTML
+map_sites.save("sites_evolville_strasbourg.html")
+# enregistrer les sites dans un fichier CSV
+df_sites.to_csv("sites_evolville_strasbourg.csv", index=False)
+# enregistrer les sites dans un fichier GeoJSON
+gdf_sites = gpd.GeoDataFrame(df_sites, geometry=gpd.points_from_xy(df_sites.x, df_sites.y))
+gdf_sites.to_file("sites_evolville_strasbourg.geojson", driver="GeoJSON")
+# enregistrer les sites dans un fichier GeoPackage
+gdf_sites.to_file("sites_evolville_strasbourg.gpkg", driver="GPKG")
+# enregistrer les sites dans un fichier Shapefile
+gdf_sites.to_file("sites_evolville_strasbourg.shp", driver="ESRI Shapefile")
+
+
+# créer une GeoDataFrame avec les points
+gdf = gpd.GeoDataFrame(
+    df,
+    geometry=gpd.points_from_xy(df['x'],df['y']),
+    crs='EPSG:4326' 
+)
+
+#Créer un buffer de 100 mètres autour des lampadaires
+buffer = gdf.geometry.buffer(0.001)  # 0.001 degrés environ 100 mètres
+
+#afficher les premiers résultats
+print(buffer[['num_site_evolville', 'geometry', 'buffer_25m']].head())
+#enregistrer le buffer dans un fichier GeoJSON
+buffer.to_file("buffer_lampadaires.geojson", driver="GeoJSON")
+#enregistrer le buffer dans un fichier Shapefile
+buffer.to_file("buffer_lampadaires.shp", driver="ESRI Shapefile")
+#enregistrer le buffer dans un fichier GeoPackage
+buffer.to_file("buffer_lampadaires.gpkg", driver="GPKG")
+#enregistrer le buffer dans un fichier CSV
+buffer.to_csv("buffer_lampadaires.csv", index=False)
+#enregistrer le buffer dans un fichier HTML
+buffer.to_html("buffer_lampadaires.html")
+
+import matplotlib.pyplot as plt
+
+# Tracer les points et les buffers
+fig, ax = plt.subplots(figsize=(10, 10))
+gdf.plot(ax=ax, color='blue', markersize=5, label='Points')
+gdf['buffer_25m'].plot(ax=ax, color='red', alpha=0.5, label='Buffer 25m')
+plt.legend()
+plt.title("Buffers de 25 mètres autour des points")
+plt.xlabel("Longitude")
+plt.ylabel("Latitude")
+plt.show()
+#enregistrer le graphique dans un fichier PNG
+plt.savefig("buffer_lampadaires.png")
+
+
+# Créer une carte centrée sur Strasbourg
+map_buffer = folium.Map(location=[48.5734, 7.7521], zoom_start=13)
+
+# Ajouter des buffer à la carte
+folium.GeoJson(
+    buffer,
+    style_function=lambda x: {'fillColor': 'red', 'color': 'red', 'weight': 1, 'fillOpacity': 0.5},
+).add_to(map_buffer)
+
+# Ajout des points des lampadaires à la carte
+for idx, row in gdf.iterrows():
+    folium.CircleMarker(
+        location=[row.geometry.y, row.geometry.x],
+        radius=3,
+        color='blue',
+        fill=True,
+        fill_color='blue',
+        popup=f"ID: {row['num_site_evolville']}"
+    ).add_to(map_buffer)
+
+# Enregistrer la carte dans un fichier HTML
+map_buffer.save("buffer_lampadaires_strasbourg.html")
+# Enregistrer les buffers dans un fichier CSV
+buffer.to_csv("buffer_lampadaires_strasbourg.csv", index=False)
+# Enregistrer les buffers dans un fichier GeoJSON
+buffer.to_file("buffer_lampadaires_strasbourg.geojson", driver="GeoJSON")
+# Enregistrer les buffers dans un fichier GeoPackage
+buffer.to_file("buffer_lampadaires_strasbourg.gpkg", driver="GPKG")
+# Enregistrer les buffers dans un fichier Shapefile
+buffer.to_file("buffer_lampadaires_strasbourg.shp", driver="ESRI Shapefile")
+
+# Charger le fichier HTML
+with open("buffer_lampadaires_strasbourg.html", "r", encoding="utf-8") as f:
+    soup = BeautifulSoup(f, "html.parser")
+
+
+#test comptage des lampadaires dans le buffer
+import geopandas as gpd
+from shapely.geometry import Point
+import pandas as pd
+
+# Charger les lampadaires et les buffers
+lampadaires = gpd.read_file("lampadaires_strasbourg.geojson")
+buffer = gpd.read_file("buffer_lampadaires_strasbourg.geojson")
+# Compter le nombre de lampadaires dans chaque buffer
+lampadaires_in_buffer = gpd.sjoin(lampadaires, buffer, op='within')
+
+lampadaires_count = lampadaires_in_buffer.groupby('index_right').size().reset_index(name='count')
+# Renommer la colonne 'index_right' en 'buffer_id'
+lampadaires_count.rename(columns={'index_right': 'buffer_id'}, inplace=True)
+# Afficher le résultat
+print(lampadaires_count.head())
+# Enregistrer le résultat dans un fichier CSV
+lampadaires_count.to_csv("lampadaires_count.csv", index=False)
+
+#afficher le résultat à une carte 
+map_lampadaires_count = folium.Map(location=[48.5734, 7.7521], zoom_start=13)
+# Ajouter des buffer à la carte
+folium.GeoJson(
+    buffer,
+    style_function=lambda x: {'fillColor': 'red', 'color': 'red', 'weight': 1, 'fillOpacity': 0.5},
+).add_to(map_lampadaires_count)
+# Ajout des points des lampadaires proche à la carte
+for idx, row in lampadaires.iterrows():
+    folium.CircleMarker(
+        location=[row.geometry.y, row.geometry.x],
+        radius=3,
+        color='blue',
+        fill=True,
+        fill_color='blue',
+        popup=f"ID: {row['num_site_evolville']}"
+    ).add_to(map_lampadaires_count)
+# Enregistrer la carte dans un fichier HTML
+map_lampadaires_count.save("lampadaires_count_strasbourg.html")
+# Enregistrer les lampadaires dans un fichier CSV
+lampadaires.to_csv("lampadaires_count_strasbourg.csv", index=False)
+# Enregistrer les lampadaires dans un fichier GeoJSON
+lampadaires.to_file("lampadaires_count_strasbourg.geojson", driver="GeoJSON")
+# Enregistrer les lampadaires dans un fichier GeoPackage
+lampadaires.to_file("lampadaires_count_strasbourg.gpkg", driver="GPKG")
+# Enregistrer les lampadaires dans un fichier Shapefile
+lampadaires.to_file("lampadaires_count_strasbourg.shp", driver="ESRI Shapefile")
+
+# Afficher le résultat
+print(lampadaires_count.head())
+
+
+#création d'une carte de chaleur avec les lampadaires
+import folium
+import pandas as pd
+from folium.plugins import HeatMap
+
+# Chargement des lampadaires depuis le fichier CSV
+df_lampadaires = pd.read_csv("lampadaires_strasbourg.csv")
+
+# Vérifier les noms de colonnes
+print(df_lampadaires.head())  # Cela affiche les premières lignes pour confirmer
+
+# Extraction des coordonnées avec les bons noms de colonnes ('latitude' et 'longitude')
+heat_data = df_lampadaires[['latitude', 'longitude']].dropna().values.tolist()
+
+# Création de la carte centrée sur Strasbourg
+m = folium.Map(location=[48.5839, 7.7455], zoom_start=12)
+
+# Ajout de la carte de chaleur avec tous les lampadaires
+HeatMap(heat_data, radius=20, blur=15, min_opacity=0.3).add_to(m)
+
+# Affichage de la carte
+m
+# Enregistrement de la carte dans un fichier HTML
+m.save("heatmap_lampadaires_strasbourg.html")
+# Enregistrement de la carte dans un fichier PNG
+m.save("heatmap_lampadaires_strasbourg.png")
+# Enregistrement de la carte dans un fichier Shapefile
+m.save("heatmap_lampadaires_strasbourg.shp")
+# Enregistrement de la carte dans un fichier CSV
+m.save("heatmap_lampadaires_strasbourg.csv")
