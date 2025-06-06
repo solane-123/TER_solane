@@ -1,0 +1,1043 @@
+#Préparation bureau
+import subprocess
+import sys
+
+packages = [
+    "rasterio",
+    "folium",
+    "matplotlib",
+    "numpy",
+    "geopandas",
+    "rasterstats"
+]
+
+for package in packages:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+import subprocess
+
+try:
+    subprocess.check_call(["/opt/homebrew/bin/brew", "install", "gdal"])
+except subprocess.CalledProcessError as e:
+    print(f"Erreur : {e}")
+except FileNotFoundError:
+    print("La commande 'brew' n'a pas été trouvée. Es-tu sûr que Homebrew est installé ?")
+
+import os
+import glob
+import matplotlib.pyplot as plt
+
+def get_tiff_files_from_desktop():
+    desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+    tiff_files = glob.glob(os.path.join(desktop_path, "*.tif"))
+    return tiff_files
+
+def get_tiff_files_from_folder(folder_path):
+    tiff_files = glob.glob(os.path.join(folder_path, "*.tif"))
+    return tiff_files
+
+def get_tiff_files_from_desktop_or_folder(folder_path=None):
+    if folder_path:
+        return get_tiff_files_from_folder(folder_path)
+    else:
+        return get_tiff_files_from_desktop()
+
+
+ter_folder_path = os.path.join(os.path.expanduser("~"), "Desktop", "TER" , "Data", "Jilin_2020")
+tiff_files = get_tiff_files_from_desktop_or_folder(ter_folder_path)
+
+for tif in tiff_files:
+    print("Fichier trouvé :", tif)
+
+import rasterio 
+
+for tif in tiff_files:
+    if "Ortho_nocturne_CG_20200325" in os.path.basename(tif):
+        print(f" Lecture de : {tif}")
+        try:
+            with rasterio.open(tif) as src:
+                print(" Image lue avec succès")
+                print(" - Dimensions :", src.width, "x", src.height)
+                print(" - Nombre de bandes :", src.count)
+                print(" - Type de données :", src.dtypes)
+                print(" - CRS (Système de coordonnées) :", src.crs)
+                print(" - Métadonnées :", src.meta)
+        except Exception as e:
+            print(" Erreur lors de l’ouverture du fichier :", e)
+
+
+#Début du traitement
+
+
+image_path = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/Ortho_nocturne_CG_20200325.tif"
+
+try:
+    with rasterio.open(image_path) as src:
+        # Lire les données de l'image
+        image_data = src.read()
+        # Lire les métadonnées
+        metadata = src.meta
+        # Lire la transformation affine
+        transform = src.transform
+        # Lire les coordonnées du système de référence
+        crs = src.crs
+
+        print("Lecture réussie ")
+        print("Métadonnées :", metadata)
+        print("Système de référence :", crs)
+except Exception as e:
+    print(f"Erreur lors de l'ouverture du fichier : {e}")
+
+#ouvrir l'image satellite
+with rasterio.open(image_path) as src:
+    print("Infos raster:")
+    print(f"- CRS: {src.crs}")
+    print(f"- Bounds: {src.bounds}")
+    print(f"- Nombre de bandes: {src.count}")
+
+    image = src.read(out_dtype='float32')  # (bands, height, width)
+    profile = src.profile
+    print(f"- Dimensions: {image.shape}")
+    print(f"- Type de données: {image.dtype}")
+    print(f"- Résolution: {src.res}")
+    print(f"- Transform: {src.transform}")
+    print(f"- Driver: {src.driver}")
+    print(f"- NoData: {src.nodata}")
+
+#Indicateur de luminance
+import numpy as np
+if image.shape[0] >= 3:
+    luminance = np.mean(image[:3], axis=0)  # Moyenne des 3 premières bandes
+else:
+    luminance = image[0]  # Image mono-bande
+
+luminance_norm = (luminance - np.min(luminance)) / (np.max(luminance) - np.min(luminance))
+print("Luminance calculée et normalisée ")
+
+#calcul de l'indicateur 1: niveau de luminance
+
+import rasterio
+import numpy as np
+import matplotlib.pyplot as plt
+
+image_path = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/Ortho_nocturne_CG_20200325.tif"
+
+with rasterio.open(image_path) as src:
+    red = src.read(1).astype(np.float32)
+    green = src.read(2).astype(np.float32)
+    blue = src.read(3).astype(np.float32)
+    
+#calcul de la luminance relative
+# Pondération standarf selon REC.709 (ITU)
+luminance_relative = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+#normalisation entre 0 et 1
+luminance_normalized = (luminance_relative - np.min(luminance_relative)) / (np.max(luminance_relative) - np.min(luminance_relative))
+# Affichage de l'image de luminance normalisée
+plt.imshow(luminance_normalized, cmap='gray')
+plt.colorbar(label='Luminance Normalisée')
+plt.title('Figure 1:Luminance Normalisée')
+plt.axis('off')
+plt.show()
+# Enregistrer l'image de luminance normalisée
+output_path = "/Users/solanemercier/Desktop/TER/Data/Result/luminance_normalized.tif"
+with rasterio.open(output_path, 'w', driver='GTiff', height=luminance_normalized.shape[0], width=luminance_normalized.shape[1], count=1, dtype='float32', crs=src.crs, transform=src.transform) as dst:
+    dst.write(luminance_normalized, 1)
+print(f"L'image de luminance normalisée a été enregistrée sous : {output_path}")
+
+#bonus : estimation de la luminance réelle
+#estimation empirique de la luminance réelle(cd/md²)
+# Ici : on suppose que 1.0 (blanc pur) ≈ 10 cd/m² (ex : lampadaire LED urbain typique)
+estimated_luminance = luminance_normalized * 10.0  # Conversion en cd/m²
+
+print(" Luminance estimée (cd/m²)")
+print(" - Moyenne :", np.nanmean(estimated_luminance))
+print(" - Max :", np.nanmax(estimated_luminance))
+print(" - Min :", np.nanmin(estimated_luminance))
+
+plt.figure(figsize=(10, 6))
+plt.imshow(estimated_luminance, cmap='inferno')
+plt.colorbar(label="Luminance estimée (cd/m²)")
+plt.title("Figure 2:luminance nocturne estimée")
+plt.axis("off")
+plt.show()
+# Enregistrer l'image de luminance estimée
+output_path_estimated = "/Users/solanemercier/Desktop/TER/Data/Result/luminance_estimated.tif"
+with rasterio.open(output_path_estimated, 'w', driver='GTiff', height=estimated_luminance.shape[0], width=estimated_luminance.shape[1], count=1, dtype='float32', crs=src.crs, transform=src.transform) as dst:
+    dst.write(estimated_luminance, 1)
+print(f"L'image de luminance estimée a été enregistrée sous : {output_path_estimated}")
+# Afficher les statistiques de luminance estimée
+print("Statistiques de luminance estimée (cd/m²):")
+print(f" - Moyenne : {np.nanmean(estimated_luminance):.2f} cd/m²")
+print(f" - Max : {np.nanmax(estimated_luminance):.2f} cd/m²")
+print(f" - Min : {np.nanmin(estimated_luminance):.2f} cd/m²")
+# Afficher l'histogramme de la luminance estimée
+plt.figure(figsize=(10, 6))
+plt.hist(estimated_luminance.ravel(), bins=50, color='blue', alpha=0.7)
+plt.title("Histogramme de la Luminance Estimée")
+plt.xlabel("Luminance (cd/m²)")
+plt.ylabel("Fréquence")
+plt.grid()
+plt.show()
+# Enregistrer l'histogramme de la luminance estimée
+histogram_path = "/Users/solanemercier/Desktop/TER/Data/Result/histogram_luminance_estimated.png"
+plt.figure(figsize=(10, 6))
+plt.hist(estimated_luminance.ravel(), bins=50, color='blue', alpha=0.7)
+plt.title("Histogramme de la Luminance Estimée")
+plt.xlabel("Luminance (cd/m²)")
+plt.ylabel("Fréquence")
+plt.grid()
+plt.savefig(histogram_path)
+print(f"L'histogramme de la luminance estimée a été enregistré sous : {histogram_path}")
+
+
+
+#calcul indicateur 2: flux lumineux
+
+import rasterio
+import numpy as np
+
+image_path = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/Ortho_nocturne_CG_20200325.tif"
+
+with rasterio.open(image_path) as src:
+    img = src.read().astype('float32')  # (3, H, W)
+    transform = src.transform
+    res_x, res_y = transform[0], -transform[4]
+    pixel_area = res_x * res_y  
+
+#convertion en luminance approximée
+luminance_relative = np.mean(img, axis=0) / 255.0
+luminance = luminance_relative * 10 ## cd/m², échelle arbitraire
+
+pixel_area = abs(1.4499991727673662 * -1.4499991727673662)
+
+#calcul du flux lumineux
+flux_lumineux = luminance * pixel_area * np.pi
+
+# Affichage des statistiques du flux lumineux
+print("Statistiques du flux lumineux (lm):")
+print(f" - Moyenne : {np.nanmean(flux_lumineux):.2f} lm")
+print(f" - Max : {np.nanmax(flux_lumineux):.2f} lm")
+print(f" - Min : {np.nanmin(flux_lumineux):.2f} lm")
+# Affichage de l'image du flux lumineux
+plt.figure(figsize=(10, 6))
+plt.imshow(flux_lumineux, cmap='inferno')
+plt.colorbar(label="Flux Lumineux (lm)")
+plt.title("Figure 3:Flux Lumineux")
+plt.axis("off")
+plt.show()
+# Enregistrer l'image du flux lumineux
+output_path_flux = "/Users/solanemercier/Desktop/TER/Data/Result/flux_lumineux.tif"
+with rasterio.open(output_path_flux, 'w', driver='GTiff', height=flux_lumineux.shape[0], width=flux_lumineux.shape[1], count=1, dtype='float32', crs=src.crs, transform=src.transform) as dst:
+    dst.write(flux_lumineux, 1)
+print(f"L'image du flux lumineux a été enregistrée sous : {output_path_flux}")
+# Enregister les statistiques du flux lumineux dans un fichier texte
+stats_flux_path = "/Users/solanemercier/Desktop/TER/Data/Result/stats_flux_lumineux.txt"
+with open(stats_flux_path, 'w') as f:
+    f.write("Statistiques du flux lumineux (lm):\n")
+    f.write(f" - Moyenne : {np.nanmean(flux_lumineux):.2f} lm\n")
+    f.write(f" - Max : {np.nanmax(flux_lumineux):.2f} lm\n")
+    f.write(f" - Min : {np.nanmin(flux_lumineux):.2f} lm\n")
+print(f"Les statistiques du flux lumineux ont été enregistrées sous : {stats_flux_path}")
+
+#filtre seuil 1000lumens
+
+# --- Seuil pour détecter des sources lumineuses intenses ---
+seuil_flux = 1000  # lumens
+sources_intenses = flux_lumineux > seuil_flux
+
+# --- Affichage ---
+plt.figure(figsize=(10, 8))
+plt.imshow(sources_intenses, cmap='hot')
+plt.title("Sources lumineuses estimées > 1000 lumens")
+plt.axis('off')
+plt.colorbar(label='Détection (1 = source intense)')
+plt.show()
+
+
+#a) calculer le flux par tuile
+
+def calculer_flux_par_tuile(flux_image, tuile_size=500):
+    rows, cols = flux_image.shape
+    flux_par_tuile = []
+    
+    for i in range(0, rows, tuile_size):
+        for j in range(0, cols, tuile_size):
+            tuile = flux_image[i:i+tuile_size, j:j+tuile_size]
+            flux_total = np.sum(tuile)
+            flux_par_tuile.append({
+                "ligne": i,
+                "colonne": j,
+                "flux_lumens": flux_total
+            })
+    
+    return flux_par_tuile
+
+# Appel
+tuiles = calculer_flux_par_tuile(flux_lumineux, tuile_size=500)
+print(f"Nombre de tuiles : {len(tuiles)}")
+print(tuiles[:5])  # aperçu
+# Enregistrer les résultats dans un fichier CSV
+import pandas as pd
+def enregistrer_flux_tuiles_csv(tuiles, output_path):
+    df = pd.DataFrame(tuiles)
+    df.to_csv(output_path, index=False)
+    print(f"Flux par tuile enregistré sous : {output_path}")
+output_csv_path = "/Users/solanemercier/Desktop/TER/Data/Result/flux_par_tuile.csv"
+enregistrer_flux_tuiles_csv(tuiles, output_csv_path)
+
+#indicateur 3: indice de pollution lumineuse (SQM=12.6−2.5⋅log 10(L))
+import numpy as np
+import matplotlib.pyplot as plt
+import rasterio
+
+# Charger l'image de luminance estimée
+image_path = "/Users/solanemercier/Desktop/TER/Data/Result/luminance_estimated.tif"
+with rasterio.open(image_path) as src:
+    luminance_estimated = src.read(1).astype(np.float32)
+# Calculer l'indice de pollution lumineuse (SQM)
+sqm_index = 12.6 - 2.5 * np.log10(luminance_estimated)
+# Normaliser l'indice de pollution lumineuse
+sqm_index_normalized = (sqm_index - np.min(sqm_index)) / (np.max(sqm_index) - np.min(sqm_index))
+# Afficher l'indice de pollution lumineuse
+plt.figure(figsize=(10, 6))
+plt.imshow(sqm_index_normalized, cmap='viridis')
+plt.colorbar(label="Indice de Pollution Lumineuse (SQM Normalisé)")
+plt.title("Figure 4:Indice de Pollution Lumineuse (SQM Normalisé)")
+plt.axis("off")
+plt.show()
+# Enregistrer l'image de l'indice de pollution lumineuse
+output_path_sqm = "/Users/solanemercier/Desktop/TER/Data/Result/sqm_index_normalized.tif"
+with rasterio.open(output_path_sqm, 'w', driver='GTiff', height=sqm_index_normalized.shape[0], width=sqm_index_normalized.shape[1], count=1, dtype='float32', crs=src.crs, transform=src.transform) as dst:
+    dst.write(sqm_index_normalized, 1)
+print(f"L'image de l'indice de pollution lumineuse a été enregistrée sous : {output_path_sqm}")
+# Afficher les statistiques de l'indice de pollution lumineuse
+print("Statistiques de l'indice de pollution lumineuse (SQM Normalisé):")
+print(f" - Moyenne : {np.nanmean(sqm_index_normalized):.2f}")
+print(f" - Max : {np.nanmax(sqm_index_normalized):.2f}")
+print(f" - Min : {np.nanmin(sqm_index_normalized):.2f}")
+
+import numpy as np
+import rasterio
+
+#calculer l'indice 4 :  clarté du ciel(basé sur la luminance)
+luminance_path = "/Users/solanemercier/Desktop/TER/Data/Result/luminance_estimated.tif"
+with rasterio.open(luminance_path) as src:
+    luminance = src.read(1).astype(np.float32)
+    profile = src.profile
+
+# Clarté du ciel selon la luminance réelle (cd/m²)
+def classify_sky_clarity(luminance):
+    # Classification empirique (valeurs à ajuster selon contexte local)
+    conditions = [
+        (luminance < 0.001),
+        (luminance < 0.01),
+        (luminance < 0.05),
+        (luminance < 0.2),
+        (luminance >= 0.2)
+    ]
+    categories = [
+        "Ciel très noir",
+        "Ciel sombre",
+        "Ciel modérément lumineux",
+        "Ciel lumineux",
+        "Ciel très lumineux"
+    ]
+    return np.select(conditions, categories, default="Inconnu").astype(object)
+
+# --- Classification de la clarté du ciel ---
+sky_clarity = classify_sky_clarity(luminance)
+
+# --- Affichage ---
+import matplotlib.colors as mcolors
+clarity_colors = {
+    "Ciel très noir": "#000011",
+    "Ciel sombre": "#222255",
+    "Ciel modérément lumineux": "#555588",
+    "Ciel lumineux": "#9999BB",
+    "Ciel très lumineux": "#DDDDFF"
+}
+
+# Créer une carte RVB à partir de la classification
+rgb_image = np.zeros((*sky_clarity.shape, 3), dtype=np.uint8)
+for label, color in clarity_colors.items():
+    mask = sky_clarity == label
+    rgb = np.array(mcolors.to_rgb(color)) * 255
+    rgb_image[mask] = rgb
+
+plt.figure(figsize=(10, 8))
+plt.imshow(rgb_image)
+plt.title("Clarté du ciel (classée)")
+plt.axis('off')
+plt.show()
+
+# Calculer l'indice de clarté du ciel (mag/arcsec²) à partir de la luminance estimée
+sky_clarity_index = 12.6 - 2.5 * np.log10(luminance)
+
+plt.figure(figsize=(10, 6))
+plt.imshow(sky_clarity_index, cmap='inferno')
+plt.colorbar(label='Indice de Clarté du Ciel (mag/arcsec²)')
+plt.title("Indice de Clarté du Ciel estimé")
+plt.axis("off")
+plt.show()
+
+output_path = "/Users/solanemercier/Desktop/TER/Data/Result/sky_clarity_index.tif"
+profile.update(dtype='float32', count=1)
+with rasterio.open(output_path, 'w', **profile) as dst:
+    dst.write(sky_clarity_index, 1)
+
+print(f"Indice de clarté du ciel sauvegardé dans : {output_path}")
+
+print("Statistiques de l'indice de clarté du ciel :")
+print(f" - Moyenne : {np.nanmean(sky_clarity_index):.2f} mag/arcsec²")
+print(f" - Max : {np.nanmax(sky_clarity_index):.2f}")
+print(f" - Min : {np.nanmin(sky_clarity_index):.2f}")
+
+#Indicateur 5: Indice NLI
+luminance_path = "/Users/solanemercier/Desktop/TER/Data/Result/luminance_estimated.tif"
+with rasterio.open(luminance_path) as src:
+    luminance = src.read(1).astype(np.float32)
+    profile = src.profile
+
+# Calcul de l'indice NLI (Nighttime Light Index)
+nli_index = (luminance - np.min(luminance)) / (np.max(luminance) - np.min(luminance))
+# Masquer les valeurs non valides (par exemple luminance = 0)
+nli_index = np.where(luminance > 0, nli_index, np.nan)
+plt.figure(figsize=(10, 6))
+plt.imshow(nli_index, cmap='viridis')
+plt.colorbar(label='Indice NLI (Normalisé)')
+plt.title("Indice NLI Normalisé")
+plt.axis("off")
+plt.show()
+
+output_path_nli = "/Users/solanemercier/Desktop/TER/Data/Result/nli_index_normalized.tif"
+profile.update(dtype='float32', count=1)
+with rasterio.open(output_path_nli, 'w', **profile) as dst:
+    dst.write(nli_index, 1)
+print(f"Indice NLI normalisé sauvegardé dans : {output_path_nli}")
+# Afficher les statistiques de l'indice NLI
+print("Statistiques de l'indice NLI (Normalisé):")
+print(f" - Moyenne : {np.nanmean(nli_index):.2f}")
+print(f" - Max : {np.nanmax(nli_index):.2f}")
+print(f" - Min : {np.nanmin(nli_index):.2f}")
+
+#Indicateur 6: indice de Bortle 
+def classify_bortle(luminance_cd_m2):
+        if luminance_cd_m2 < 0.0003: return 1
+        elif luminance_cd_m2 < 0.001: return 2
+        elif luminance_cd_m2 < 0.003: return 3
+        elif luminance_cd_m2 < 0.008: return 4
+        elif luminance_cd_m2 < 0.02: return 5
+        elif luminance_cd_m2 < 0.04: return 6
+        elif luminance_cd_m2 < 0.1: return 7
+        elif luminance_cd_m2 < 0.25: return 8
+        else: return 9
+# Appliquer la fonction sur l'image
+vectorized_classify_bortle = np.vectorize(classify_bortle)
+bortle_index = vectorized_classify_bortle(luminance)
+
+
+plt.figure(figsize=(10, 6))
+plt.imshow(bortle_index, cmap="turbo", vmin=1, vmax=9)
+plt.colorbar(label="Indice de Bortle luminance")
+plt.title("Indice de Bortle estimé à partir de la luminance")
+plt.axis("off")
+plt.show()
+
+output_bortle = "/Users/solanemercier/Desktop/TER/Data/Result/bortle_index.tif"
+with rasterio.open(output_bortle, "w", driver="GTiff", height=bortle_index.shape[0], width=bortle_index.shape[1],
+                   count=1, dtype='uint8', crs=crs, transform=transform) as dst:
+    dst.write(bortle_index.astype(np.uint8), 1)
+
+print(f"Image de l'indice de Bortle enregistrée sous : {output_bortle}")
+
+
+def sqm_to_bortle(sqm):
+    # Valeurs approximatives basées sur correspondance empirique
+    if sqm >= 21.75:
+        return 1
+    elif sqm >= 21.0:
+        return 2
+    elif sqm >= 20.0:
+        return 3
+    elif sqm >= 19.0:
+        return 4
+    elif sqm >= 18.0:
+        return 5
+    elif sqm >= 17.0:
+        return 6
+    elif sqm >= 16.0:
+        return 7
+    elif sqm >= 15.0:
+        return 8
+    else:
+        return 9
+
+# Application sur une carte (vectorisée)
+bortle_index = np.vectorize(sqm_to_bortle)(sqm_index)
+# Affichage de l'indice de Bortle
+plt.figure(figsize=(10, 6))
+plt.imshow(bortle_index, cmap='turbo', vmin=1, vmax=9)
+plt.colorbar(label='Indice de Bortle SQM')
+plt.title("Indice de Bortle estimé")
+plt.axis("off")
+plt.show()
+# Enregistrer l'indice de Bortle
+output_bortle_sqm = "/Users/solanemercier/Desktop/TER/Data/Result/bortle_index_sqm.tif"
+with rasterio.open(output_bortle_sqm, 'w', driver='GTiff', height=bortle_index.shape[0], width=bortle_index.shape[1], count=1, dtype='uint8', crs=src.crs, transform=src.transform) as dst:
+    dst.write(bortle_index.astype(np.uint8), 1)
+print(f"L'indice de Bortle a été enregistré sous : {output_bortle_sqm}")
+
+
+
+# Création d'un fichier .gitignore pour ignorer les fichiers temporaires, résultats et données volumineuses
+gitignore_content = """
+# Fichiers Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Dossiers de résultats
+/Result/
+/Result/*
+*.tif
+*.png
+*.csv
+
+# Données brutes volumineuses
+/Data/
+/Data/*
+!Data/README.md
+
+# Fichiers système
+.DS_Store
+
+# Environnements virtuels
+venv/
+.env/
+"""
+
+gitignore_path = os.path.join(os.path.dirname(__file__), ".gitignore")
+with open(gitignore_path, "w") as f:
+    f.write(gitignore_content)
+print(f"Fichier .gitignore créé à : {gitignore_path}")
+
+# Ajouter les fichiers de résultats au .gitignore 
+result_files = [
+    "luminance_normalized.tif",
+    "luminance_estimated.tif",
+    "histogram_luminance_estimated.png",
+    "flux_lumineux.tif",
+    "flux_par_tuile.csv",
+    "sqm_index_normalized.tif",
+    "sky_clarity_index.tif",
+    "nli_index_normalized.tif",
+    "bortle_index.tif"
+]
+
+gitignore_path = os.path.join(os.path.dirname(__file__), ".gitignore")
+
+with open(gitignore_path, "r") as f:
+    lines = f.readlines()
+
+with open(gitignore_path, "a") as f:
+    for result_file in result_files:
+        pattern = f"/Result/{result_file}\n"
+        if pattern not in lines:
+            f.write(pattern)
+print("Fichiers de résultats ajoutés au .gitignore.")
+
+#calcule 7 indicateur: la première approche de l'indicateur du spectre des sources lumlineuses
+import numpy as np
+import rasterio
+import matplotlib.pyplot as plt
+
+# Chargement de l'image RVB
+path = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/Ortho_nocturne_CG_20200325.tif"
+with rasterio.open(path) as src:
+    red = src.read(1).astype(np.float32)
+    green = src.read(2).astype(np.float32)
+    blue = src.read(3).astype(np.float32)
+
+# Calculer un indice spectral RVB basé sur la dominante de couleur
+def calculate_spectral_index(red, green, blue):
+    total = red + green + blue
+    total[total == 0] = 1e-6  # éviter la division par zéro
+
+    # Composantes normalisées
+    r_norm = red / total
+    g_norm = green / total
+    b_norm = blue / total
+
+    # Exemple : indice simple de dominante spectrale
+    # +1 → dominant rouge ; 0 → neutre/blanc ; -1 → dominant bleu
+    spectral_index = r_norm - b_norm
+
+    return spectral_index
+
+# Calcul de l’indice
+spectral_index = calculate_spectral_index(red, green, blue)
+
+# Visualisation
+plt.figure(figsize=(10, 6))
+plt.imshow(spectral_index, cmap='coolwarm', vmin=-1, vmax=1)
+plt.colorbar(label="Indice Spectral (rouge - bleu)")
+plt.title("Indice du Spectre des Sources Lumineuses")
+plt.axis("off")
+plt.show()
+
+
+# Enregistrer l'indice de spectre des sources lumineuses
+output_spectrum_path = "/Users/solanemercier/Desktop/TER/Data/Result/spectrum_index.tif"
+with rasterio.open(output_spectrum_path, 'w', driver='GTiff', height=spectral_index.shape[0], width=spectral_index.shape[1], count=1, dtype='float32', crs=src.crs, transform=src.transform) as dst:
+    dst.write(spectral_index, 1)
+print(f"L'indice de spectre des sources lumineuses a été enregistré sous : {output_spectrum_path}")
+
+import math
+import numpy as np
+import rasterio
+import matplotlib.pyplot as plt
+
+# --- Chargement des bandes ---
+path = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/Ortho_nocturne_CG_20200325.tif"
+with rasterio.open(path) as src:
+    red = src.read(1).astype(np.float32)
+    green = src.read(2).astype(np.float32)
+    blue = src.read(3).astype(np.float32)
+
+# --- Fonction radiance optique vectorisée ---
+def radiance_optique(phi, A, theta_deg, omega):
+    """
+    Calcule la radiance optique L = phi / (A * cos(theta) * omega)
+    theta_deg peut être un scalaire ou un numpy array
+    """
+    theta_rad = np.radians(theta_deg)
+    cos_theta = np.cos(theta_rad)
+    denominator = A * cos_theta * omega
+
+    # Eviter division par zéro : on remplace les zeros par NaN
+    denominator = np.where(denominator == 0, np.nan, denominator)
+
+    L = phi / denominator
+    return L
+
+# --- Exemple d’utilisation pour radiance optique ---
+phi = 10.0      # watts
+A = 2.0         # m²
+omega = 0.1     # sr
+
+# Calcul radiance optique pour un angle unique
+theta_deg = 30  
+radiance_single = radiance_optique(phi, A, theta_deg, omega)
+print(f"Radiance optique (θ={theta_deg}°) = {radiance_single:.3f} W·m⁻²·sr⁻¹")
+
+# Calcul radiance optique pour un vecteur d’angles (ex pour graphique)
+theta_vec = np.linspace(0, 90, 300)
+radiance_vec = radiance_optique(phi, A, theta_vec, omega)
+
+# --- Fonction radiance télédétection vectorisée ---
+def radiance_teledetection(DN, L_min, L_max, DN_min=0, DN_max=255):
+    """
+    Calcule la radiance à partir d'un DN (digital number) en télédétection.
+    DN peut être un scalaire ou un numpy array.
+    """
+    DN = np.array(DN, dtype=float)
+
+    # Clamp DN entre DN_min et DN_max
+    DN_clamped = np.clip(DN, DN_min, DN_max)
+
+    L = L_min + (L_max - L_min) * (DN_clamped - DN_min) / (DN_max - DN_min)
+    return L
+
+# --- Exemple d’utilisation sur un DN simple ---
+DN_example = 120
+L_min = 0.0
+L_max = 15.0
+radiance_dn = radiance_teledetection(DN_example, L_min, L_max)
+print(f"Radiance télédétection (DN={DN_example}) = {radiance_dn:.3f} W·m⁻²·sr⁻¹·μm⁻¹")
+
+# --- Calcul radiance télédétection sur la bande rouge entière ---
+radiance_red = radiance_teledetection(red, L_min, L_max)
+
+# --- Tracé graphique ---
+plt.figure(figsize=(12,5))
+
+# Radiance optique vs angle
+plt.subplot(1,2,1)
+plt.plot(theta_vec, radiance_vec, label='Radiance optique')
+plt.xlabel('Angle θ (degrés)')
+plt.ylabel('Radiance (W·m⁻²·sr⁻¹)')
+plt.title('Radiance optique en fonction de l\'angle θ')
+plt.grid(True)
+plt.legend()
+
+# Histogramme radiance télédétection (bande rouge)
+plt.subplot(1,2,2)
+plt.hist(radiance_red.flatten(), bins=50, color='red', alpha=0.7)
+plt.xlabel('Radiance télédétection (W·m⁻²·sr⁻¹·μm⁻¹)')
+plt.title('Histogramme de la radiance télédétection (bande rouge)')
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
+
+
+# Identifier la diffusion de la lumière
+import rasterio
+import numpy as np
+import matplotlib.pyplot as plt
+import geopandas as gpd
+from rasterio.features import rasterize
+from rasterio.transform import from_origin
+from rasterio.warp import reproject, Resampling
+
+# --- Chargement des données ---
+path_img = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/Ortho_nocturne_CG_20200325.tif"
+path_mns = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/mnt2015_t2018.geojson"  # GeoJSON -> Raster
+
+def geojson_to_raster(path_geojson, pixel_size=10):
+    gdf = gpd.read_file(path_geojson)
+
+    if gdf.empty:
+        raise ValueError("Le fichier GeoJSON ne contient aucune géométrie.")
+
+    if gdf.crs is None:
+        raise ValueError("Le fichier GeoJSON n'a pas de système de coordonnées (CRS).")
+    elif not gdf.crs.is_projected:
+        print("Reprojection en EPSG:3857 (Web Mercator)...")
+        gdf = gdf.to_crs(epsg=3857)
+
+    bounds = gdf.total_bounds  # [minx, miny, maxx, maxy]
+    width = int((bounds[2] - bounds[0]) / pixel_size)
+    height = int((bounds[3] - bounds[1]) / pixel_size)
+
+    if width <= 0 or height <= 0:
+        raise ValueError(f"Dimensions invalides : width={width}, height={height}. Vérifie ton GeoJSON.")
+
+    transform = from_origin(bounds[0], bounds[3], pixel_size, pixel_size)
+
+    raster = rasterize(
+        [(geom, 1) for geom in gdf.geometry if geom.is_valid],
+        out_shape=(height, width),
+        transform=transform,
+        fill=0,
+        dtype='float32'
+    )
+
+    return raster, transform, gdf.crs
+
+
+# Charger l'image satellite
+with rasterio.open(path_img) as src_img:
+    img_red = src_img.read(1).astype(np.float32)
+    img_green = src_img.read(2).astype(np.float32)
+    img_blue = src_img.read(3).astype(np.float32)
+    profile_img = src_img.profile
+    transform_img = src_img.transform
+    crs_img = src_img.crs
+
+# Convertir le GeoJSON MNS en raster
+dem, transform_dem, crs_dem = geojson_to_raster(path_mns, pixel_size=10)
+
+# --- Calcul de la pente et de l'aspect ---
+xres = transform_dem[0]
+yres = -transform_dem[4]
+
+dzdx = (dem[1:-1, 2:] - dem[1:-1, :-2]) / (2 * xres)
+dzdy = (dem[2:, 1:-1] - dem[:-2, 1:-1]) / (2 * yres)
+
+slope = np.arctan(np.sqrt(dzdx**2 + dzdy**2))
+aspect = np.arctan2(-dzdx, dzdy)
+aspect = np.where(aspect < 0, 2 * np.pi + aspect, aspect)
+
+# --- Paramètres du soleil ---
+azimuth_deg = 135
+zenith_deg = 45
+azimuth_rad = np.radians(azimuth_deg)
+zenith_rad = np.radians(zenith_deg)
+
+cos_i = (np.cos(zenith_rad) * np.cos(slope) +
+         np.sin(zenith_rad) * np.sin(slope) * np.cos(azimuth_rad - aspect))
+illumination = np.clip(cos_i, 0, None)
+
+# --- Reprojection & Resampling pour adapter illumination à l'image ---
+illumination_resampled = np.zeros_like(img_red, dtype=np.float32)
+
+reproject(
+    source=illumination,
+    destination=illumination_resampled,
+    src_transform=transform_dem,
+    src_crs=crs_dem,
+    dst_transform=transform_img,
+    dst_crs=crs_img,
+    resampling=Resampling.bilinear
+)
+
+# --- Correction ---
+corrected_red = img_red / (illumination_resampled + 1e-6)
+
+threshold = np.percentile(corrected_red, 10)
+zones_sombres = corrected_red < threshold
+
+# --- Affichage ---
+fig, axs = plt.subplots(2, 2, figsize=(14,12))
+
+axs[0,0].imshow(img_red, cmap='Reds')
+axs[0,0].set_title("Bande rouge - image originale")
+axs[0,0].axis('off')
+
+axs[0,1].imshow(illumination_resampled, cmap='gray')
+axs[0,1].set_title("Illumination topographique")
+axs[0,1].axis('off')
+
+axs[1,0].imshow(corrected_red, cmap='Reds')
+axs[1,0].set_title("Image corrigée")
+axs[1,0].axis('off')
+
+axs[1,1].imshow(zones_sombres, cmap='gray')
+axs[1,1].set_title("Zones sombres détectées")
+axs[1,1].axis('off')
+
+plt.tight_layout()
+plt.show()
+
+#enregistrer les résultats
+output_corrected_path = "/Users/solanemercier/Desktop/TER/Data/Result/corrected_red.tif"
+with rasterio.open(output_corrected_path, 'w', driver='GTiff', height=corrected_red.shape[0], width=corrected_red.shape[1], count=1, dtype='float32', crs=crs_img, transform=transform_img) as dst:
+    dst.write(corrected_red, 1)
+print(f"L'image corrigée a été enregistrée sous : {output_corrected_path}")
+#afficher les statistiques de l'image corrigée
+print("Statistiques de l'image corrigée :")
+print(f" - Moyenne : {np.nanmean(corrected_red):.2f}")
+print(f" - Max : {np.nanmax(corrected_red):.2f}")
+print(f" - Min : {np.nanmin(corrected_red):.2f}")
+#afficher les valeurs résultantes du calcul de l'indice de diffusion de la lumière
+print("Valeurs de l'indice de diffusion de la lumière :")
+print(f" - Moyenne : {np.nanmean(illumination_resampled):.2f}")
+print(f" - Max : {np.nanmax(illumination_resampled):.2f}")
+print(f" - Min : {np.nanmin(illumination_resampled):.2f}")
+# Enregistrer l'illumination topographique
+output_illumination_path = "/Users/solanemercier/Desktop/TER/Data/Result/illumination_topographique.tif"
+with rasterio.open(output_illumination_path, 'w', driver='GTiff', height=illumination_resampled.shape[0], width=illumination_resampled.shape[1], count=1, dtype='float32', crs=crs_img, transform=transform_img) as dst:
+    dst.write(illumination_resampled, 1)
+print(f"L'illumination topographique a été enregistrée sous : {output_illumination_path}")
+# Enregistrer les zones sombres détectées
+output_zones_sombres_path = "/Users/solanemercier/Desktop/TER/Data/Result/zones_sombres.tif"
+with rasterio.open(output_zones_sombres_path, 'w', driver='GTiff', height=zones_sombres.shape[0], width=zones_sombres.shape[1], count=1, dtype='uint8', crs=crs_img, transform=transform_img) as dst:
+    dst.write(zones_sombres.astype(np.uint8), 1)
+print(f"Les zones sombres détectées ont été enregistrées sous : {output_zones_sombres_path}")
+
+#Pipeline IDA + ML supervisé
+
+import numpy as np
+import rasterio
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+from joblib import dump
+
+path_red_corr = "/Users/solanemercier/Desktop/TER/Data/Result/corrected_red.tif"
+path_illumination = "/Users/solanemercier/Desktop/TER/Data/Result/illumination_topographique.tif"
+
+def read_raster(path):
+    with rasterio.open(path) as src:
+        return src.read(1).astype(np.float32), src.transform, src.crs
+
+corrected_red, transform, crs = read_raster(path_red_corr)
+illumination, _, _ = read_raster(path_illumination)
+
+# --- Calcul d’un IDA initial (brut, empirique) ---
+IDA_initial = corrected_red / (illumination + 1e-6)
+IDA_initial = np.clip(IDA_initial, 0, 1)  # Normalisation simple
+
+# --- Création automatique d’annotations (labels heuristiques) ---
+# 0 = normal, 1 = forte diffusion, 2 = rétro-réflexion, 3 = artefact (valeurs extrêmes)
+labels = np.zeros_like(IDA_initial, dtype=np.uint8)
+
+labels[(IDA_initial > 0.6) & (corrected_red > 10)] = 1  # forte diffusion
+labels[(IDA_initial > 0.6) & (corrected_red < 1)] = 2   # rétro-réflexion
+labels[(corrected_red > 500)] = 3                       # artefacts
+
+# --- Création du jeu de données (features + labels) ---
+flat_IDA = IDA_initial.flatten()
+flat_red = corrected_red.flatten()
+flat_illum = illumination.flatten()
+flat_labels = labels.flatten()
+
+# Supprimer les pixels invalides
+valid_mask = ~np.isnan(flat_IDA) & ~np.isnan(flat_red) & ~np.isnan(flat_illum)
+X = np.stack([flat_red[valid_mask], flat_illum[valid_mask], flat_IDA[valid_mask]], axis=1)
+y = flat_labels[valid_mask]
+
+# --- Entraînement du modèle RandomForest ---
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+
+clf = RandomForestClassifier(n_estimators=100, random_state=42)
+clf.fit(X_train, y_train)
+
+print("\n--- Rapport de classification ---")
+print(classification_report(y_test, clf.predict(X_test)))
+
+# Sauvegarde du modèle
+dump(clf, "modele_IDA.joblib")
+
+# --- Prédiction sur toute l’image ---
+predicted = np.full(flat_IDA.shape, fill_value=-1)
+predicted[valid_mask] = clf.predict(X)
+predicted = predicted.reshape(IDA_initial.shape)
+
+# --- Ajustement de l’IDA selon les prédictions ---
+IDA_adjusted = IDA_initial.copy()
+IDA_adjusted[predicted == 1] *= 1.2  # forte diffusion
+IDA_adjusted[predicted == 2] *= 1.5  # rétro-réflexion
+IDA_adjusted[predicted == 3] *= 0.8  # artefact -> réduire
+
+IDA_adjusted = np.clip(IDA_adjusted, 0, 1)
+
+# --- Visualisation ---
+fig, axs = plt.subplots(2, 2, figsize=(14, 12))
+
+axs[0, 0].imshow(IDA_initial, cmap="viridis")
+axs[0, 0].set_title("IDA initial")
+axs[0, 0].axis("off")
+
+axs[0, 1].imshow(predicted, cmap="tab10")
+axs[0, 1].set_title("Zones détectées (prédictions ML)")
+axs[0, 1].axis("off")
+
+axs[1, 0].imshow(IDA_adjusted, cmap="viridis")
+axs[1, 0].set_title("IDA ajusté")
+axs[1, 0].axis("off")
+
+axs[1, 1].imshow(corrected_red, cmap="Reds")
+axs[1, 1].set_title("Corrected Red")
+axs[1, 1].axis("off")
+
+plt.tight_layout()
+plt.show()
+
+# --- Sauvegarde en GeoTIFF ---
+output_path_adjusted = "/Users/solanemercier/Desktop/TER/Data/Result/IDA_adjusted.tif"
+with rasterio.open(
+    output_path_adjusted, 'w', driver='GTiff',
+    height=IDA_adjusted.shape[0], width=IDA_adjusted.shape[1],
+    count=1, dtype='float32', crs=crs, transform=transform
+) as dst:
+    dst.write(IDA_adjusted, 1)
+
+print(f"IDA ajusté sauvegardé ici : {output_path_adjusted}")
+
+#corélation
+import subprocess
+import sys
+
+try:
+    import seaborn
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "seaborn"])
+    import seaborn
+
+# Analyse de corrélation entre les différents indicateurs
+import rasterio
+import pandas as pd
+import numpy as np
+import seaborn as sns
+
+# Charger les indicateurs principaux (luminance, flux lumineux, SQM, NLI, Bortle)
+result_dir = "/Users/solanemercier/Desktop/TER/Data/Result"
+
+with rasterio.open(f"{result_dir}/luminance_estimated.tif") as src:
+    luminance = src.read(1).flatten()
+with rasterio.open(f"{result_dir}/flux_lumineux.tif") as src:
+    flux = src.read(1).flatten()
+with rasterio.open(f"{result_dir}/sqm_index_normalized.tif") as src:
+    sqm = src.read(1).flatten()
+with rasterio.open(f"{result_dir}/nli_index_normalized.tif") as src:
+    nli = src.read(1).flatten()
+with rasterio.open(f"{result_dir}/bortle_index.tif") as src:
+    bortle = src.read(1).flatten()
+
+# Créer un DataFrame pour l'analyse
+df = pd.DataFrame({
+    "luminance": luminance,
+    "flux": flux,
+    "sqm": sqm,
+    "nli": nli,
+    "bortle": bortle
+})
+
+# Nettoyer les valeurs infinies ou NaN
+df = df.replace([np.inf, -np.inf], np.nan).dropna()
+
+# Calculer la matrice de corrélation de Pearson
+corr_matrix = df.corr(method='pearson')
+print("Matrice de corrélation de Pearson :\n", corr_matrix)
+
+# Afficher la matrice de corrélation sous forme de heatmap
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(8,6))
+sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt=".2f")
+plt.title("Corrélation entre les indicateurs")
+plt.show()
+
+
+output_corr_path = "/Users/solanemercier/Desktop/TER/Data/Result/correlation_matrix.csv"
+corr_matrix.to_csv(output_corr_path)
+print(f"Matrice de corrélation enregistrée sous : {output_corr_path}")  
+
+# S'assurer que scikit-learn est installé
+import subprocess
+import sys
+
+try:
+    import sklearn
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "scikit-learn"])
+    import sklearn
+
+from sklearn.linear_model import LinearRegression
+
+# - Analyse de régression : prédire le SQM à partir de la luminance ou du flux lumineux.
+import os
+import rasterio
+import numpy as np
+import pandas as pd
+
+# Charger les données
+result_dir = "/Users/solanemercier/Desktop/TER/Data/Result"
+with rasterio.open(f"{result_dir}/luminance_estimated.tif") as src:
+    luminance = src.read(1).flatten()
+with rasterio.open(f"{result_dir}/flux_lumineux.tif") as src:
+    flux = src.read(1).flatten()
+with rasterio.open(f"{result_dir}/sqm_index_normalized.tif") as src:
+    sqm = src.read(1).flatten()
+# Créer un DataFrame pour l'analyse
+df = pd.DataFrame({
+    "luminance": luminance,
+    "flux": flux,
+    "sqm": sqm
+})
+# Nettoyer les valeurs infinies ou NaN
+df = df.replace([np.inf, -np.inf], np.nan).dropna()
+# Séparer les variables indépendantes (X) et dépendantes (y)
+X = df[["luminance", "flux"]]
+y = df["sqm"]
+# Créer et entraîner le modèle de régression linéaire
+model = LinearRegression()
+model.fit(X, y)
+# Afficher les coefficients du modèle
+print("Coefficients du modèle de régression :")
+print(f"Luminance: {model.coef_[0]:.4f}, Flux: {model.coef_[1]:.4f}")
+print(f"Intercept: {model.intercept_:.4f}")
+# Enregistrer le modèle
+import joblib
+model_path = os.path.join(result_dir, "sqm_regression_model.pkl")
+joblib.dump(model, model_path)
+print(f"Modèle de régression enregistré sous : {model_path}")
+
+import pandas as pd
+print(pd.DataFrame(X).corrwith(y))
+
