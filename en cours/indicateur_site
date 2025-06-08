@@ -22,12 +22,13 @@ def get_tiff_files_from_desktop_or_folder(folder_path=None):
     else:
         return get_tiff_files_from_desktop()
 
+# Main execution block to avoid accidental infinite execution if imported elsewhere
+if __name__ == "__main__":
+    ter_folder_path = os.path.join(os.path.expanduser("~"), "Desktop", "TER" , "Data", "Jilin_2020")
+    tiff_files = get_tiff_files_from_desktop_or_folder(ter_folder_path)
 
-ter_folder_path = os.path.join(os.path.expanduser("~"), "Desktop", "TER" , "Data", "Jilin_2020")
-tiff_files = get_tiff_files_from_desktop_or_folder(ter_folder_path)
-
-for tif in tiff_files:
-    print("Fichier trouvé :", tif)
+    for tif in tiff_files:
+        print("Fichier trouvé :", tif)
 
 import rasterio 
 
@@ -408,6 +409,7 @@ for buffer_file in buffer_files_200m:
         plt.axis('off')
         plt.show()
 #fin d'exécution
-print("Tous les buffers de 200m ont été affichés.")
 #fin d'exécution
+print("Fin de l'exécution du script.")
+# Le script s'arrête ici, il n'y a pas de boucle infinie.
 print("Fin de l'exécution du script.")
