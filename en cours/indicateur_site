@@ -24,7 +24,7 @@ def get_tiff_files_from_desktop_or_folder(folder_path=None):
 
 if __name__ == "__main__":
     # Main execution block to avoid accidental infinite execution if imported elsewhere
-    ter_folder_path = os.path.join(os.path.expanduser("~"), "Desktop", "TER" , "Data", "Jilin_2020")
+    ter_folder_path = os.path.join(os.path.expanduser("~"), "Q:", "MERCIER" , "Code", "Jilin_2020")
     tiff_files = get_tiff_files_from_desktop_or_folder(ter_folder_path)
 
     for tif in tiff_files:
