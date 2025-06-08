@@ -5,17 +5,13 @@
 
 import os
 import glob
-import matplotlib.pyplot as plt
-import traceback
 import geopandas as gpd
 from rasterio.transform import from_origin
 from rasterio.features import rasterize
 import pandas as pd
-from shapely.geometry import Point
 import geopandas as gpd
 import pandas as pd
 import rasterio
-from shapely.geometry import Point
 from rasterio.mask import mask
 import glob
 import numpy as np
@@ -36,6 +32,76 @@ def get_tiff_files_from_desktop_or_folder(folder_path=None):
         return get_tiff_files_from_folder(folder_path)
     else:
         return get_tiff_files_from_desktop()
+    
+def luminance(img, output_dir, rayon, site_id, luminance_results):
+    if img.shape[0] >= 3:
+        red = img[0].astype(np.float32)
+        green = img[1].astype(np.float32)
+        blue = img[2].astype(np.float32)
+        # Calcul de la luminance relative selon REC.709
+        luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+    else:
+        luminance = img[0].astype(np.float32)
+    # Masquer les valeurs nodata
+    nodata = src.nodata
+    if nodata is not None:
+        mask_bis = (img[0] != nodata)
+        valid_luminance = luminance[mask_bis]
+    else:
+        mask_bis = np.ones_like(luminance, dtype=bool)
+        valid_luminance = luminance
+
+    # Normalisation entre 0 et 1 (sur les pixels valides)
+    if valid_luminance.size > 0:
+        luminance_norm = np.zeros_like(luminance, dtype=np.float32)
+        min_val = valid_luminance.min()
+        max_val = valid_luminance.max()
+        if max_val > min_val:
+            luminance_norm[mask_bis] = (luminance[mask_bis] - min_val) / (max_val - min_val)
+        else:
+            luminance_norm[mask_bis] = 0
+    else:
+        luminance_norm = np.zeros_like(luminance, dtype=np.float32)
+
+    # Sauvegarde du raster de luminance normalisée
+    luminance_out_path = os.path.join(output_dir, f"luminance_buffer{rayon}m_{site_id}.tif")
+    meta = src.meta.copy()
+    meta.update({
+        "driver": "GTiff",
+        "count": 1,
+        "dtype": "float32"
+    })
+    with rasterio.open(luminance_out_path, "w", **meta) as dst:
+        dst.write(luminance_norm, 1)
+    print(f"Luminance normalisée sauvegardée : {luminance_out_path}")
+
+    # Stocker la moyenne de luminance normalisée pour ce buffer
+    mean_luminance = luminance_norm[mask_bis].mean() if mask_bis.sum() > 0 else np.nan
+    luminance_results.append({
+        "site": f"site_{str(site_id)}",
+        "mean_luminance_norm": mean_luminance
+    })
+
+def flux_lumineux(img, transform):
+    res_x, res_y = transform[0], -transform[4]
+    pixel_area = res_x * res_y 
+
+    #convertion en luminance approximée
+    luminance_relative = np.mean(img, axis=0) / 255.0
+    luminance = luminance_relative * 10 ## cd/m², échelle arbitraire
+
+    pixel_area = abs(1.4499991727673662 * -1.4499991727673662)
+
+    #calcul du flux lumineux
+    flux_lumineux = luminance * pixel_area * np.pi
+
+    # Affichage des statistiques du flux lumineux
+    print("Statistiques du flux lumineux (lm):")
+    print(f" - Moyenne : {np.nanmean(flux_lumineux):.2f} lm")
+    print(f" - Max : {np.nanmax(flux_lumineux):.2f} lm")
+    print(f" - Min : {np.nanmin(flux_lumineux):.2f} lm")
+    # Affichage de l'image du flux lumineux
+    
 
 def traitement_buffer(gdf, image_path, path, rayon):
     image_crs = None
@@ -56,7 +122,6 @@ def traitement_buffer(gdf, image_path, path, rayon):
     output_dir = os.path.abspath(os.path.join(path, "result/buffers_individuels" + str(rayon)))
     os.makedirs(output_dir, exist_ok=True)
     luminance_results = []
-    idx = 0
     with rasterio.open(image_path) as src:
         original_nodata = src.nodata
         if original_nodata is None:
@@ -82,62 +147,13 @@ def traitement_buffer(gdf, image_path, path, rayon):
             with rasterio.open(out_path, "w", **out_meta_ind) as dest:
                 dest.write(out_img)
             print(f"Raster {rayon}m découpé sauvegardé pour le site {site_id} : {out_path}")
-
             img = out_img
-            # luminance
-            if img.shape[0] >= 3:
-                red = img[0].astype(np.float32)
-                green = img[1].astype(np.float32)
-                blue = img[2].astype(np.float32)
-                # Calcul de la luminance relative selon REC.709
-                luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
-            else:
-                luminance = img[0].astype(np.float32)
-            # Masquer les valeurs nodata
-            nodata = src.nodata
-            if nodata is not None:
-                mask_bis = (img[0] != nodata)
-                valid_luminance = luminance[mask_bis]
-            else:
-                mask_bis = np.ones_like(luminance, dtype=bool)
-                valid_luminance = luminance
-
-            # Normalisation entre 0 et 1 (sur les pixels valides)
-            if valid_luminance.size > 0:
-                luminance_norm = np.zeros_like(luminance, dtype=np.float32)
-                min_val = valid_luminance.min()
-                max_val = valid_luminance.max()
-                if max_val > min_val:
-                    luminance_norm[mask_bis] = (luminance[mask_bis] - min_val) / (max_val - min_val)
-                else:
-                    luminance_norm[mask_bis] = 0
-            else:
-                luminance_norm = np.zeros_like(luminance, dtype=np.float32)
-
-            # Sauvegarde du raster de luminance normalisée
-            luminance_out_path = os.path.join(output_dir, f"luminance_buffer{rayon}m_{site_id}.tif")
-            meta = src.meta.copy()
-            meta.update({
-                "driver": "GTiff",
-                "count": 1,
-                "dtype": "float32"
-            })
-            with rasterio.open(luminance_out_path, "w", **meta) as dst:
-                dst.write(luminance_norm, 1)
-            print(f"Luminance normalisée sauvegardée : {luminance_out_path}")
-
-            # Stocker la moyenne de luminance normalisée pour ce buffer
-            mean_luminance = luminance_norm[mask_bis].mean() if mask_bis.sum() > 0 else np.nan
-            luminance_results.append({
-                "site": f"site_{str(site_id)}",
-                "mean_luminance_norm": mean_luminance
-            })
-            idx += 1
+            luminance(img, output_dir, rayon, site_id, luminance_results)
+            flux_lumineux(img, out_trans)
+            
     df_luminance = pd.DataFrame(luminance_results)
     print(f"Résumé de la luminance normalisée par buffer {rayon}m :")
     print(df_luminance)
-
-
 
 if __name__ == "__main__":
     directory = os.path.dirname(os.path.abspath(__file__))
@@ -160,7 +176,7 @@ if __name__ == "__main__":
                     print(" Image lue avec succès")
                     print(" - Dimensions :", src.width, "x", src.height)
                     print(" - Nombre de bandes :", src.count)
-                    print(" - Type de données :", src.dtypes)
+                    print(" - Type de données :", src.dtypes) 
                     print(" - CRS (Système de coordonnées) :", src.crs)
                     print(" - Métadonnées :", src.meta)
             except Exception as e:
@@ -220,7 +236,7 @@ if __name__ == "__main__":
 
     #chemin pour le fichier CSV
     image_path =  os.path.abspath(os.path.join(ter_folder_path, "Ortho_nocturne_CG_20200325.tif"))
-    csv_path =  os.path.abspath(os.path.join(ter_folder_path, "donnée_lampadaire\XY_site (1).csv"))
+    csv_path =  os.path.abspath(os.path.join(ter_folder_path, "donnée_lampadaire/XY_site (1).csv"))
     print("Chemin du fichier CSV :", csv_path)
 
 
