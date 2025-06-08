@@ -37,10 +37,10 @@ def get_tiff_files_from_folder(folder_path):
  return tiff_files
 
 def get_tiff_files_from_desktop_or_folder(folder_path=None):
- if folder_path:
- return get_tiff_files_from_folder(folder_path)
- else:
- return get_tiff_files_from_desktop()
+	if folder_path:
+		return get_tiff_files_from_folder(folder_path)
+	else:
+		return get_tiff_files_from_desktop()
 
 
 ter_folder_path = os.path.join(os.path.expanduser("~"), "Desktop", "TER" , "Data", "Jilin_2020")
@@ -52,18 +52,18 @@ for tif in tiff_files:
 import rasterio 
 
 for tif in tiff_files:
- if "Ortho_nocturne_CG_20200325" in os.path.basename(tif):
- print(f" Lecture de : {tif}")
- try:
- with rasterio.open(tif) as src:
- print(" Image lue avec succès")
- print(" - Dimensions :", src.width, "x", src.height)
- print(" - Nombre de bandes :", src.count)
- print(" - Type de données :", src.dtypes)
- print(" - CRS (Système de coordonnées) :", src.crs)
- print(" - Métadonnées :", src.meta)
- except Exception as e:
- print(" Erreur lors de l’ouverture du fichier :", e)
+	if "Ortho_nocturne_CG_20200325" in os.path.basename(tif):
+		print(f" Lecture de : {tif}")
+		try:
+			with rasterio.open(tif) as src:
+				print(" Image lue avec succès")
+				print(" - Dimensions :", src.width, "x", src.height)
+				print(" - Nombre de bandes :", src.count)
+				print(" - Type de données :", src.dtypes)
+				print(" - CRS (Système de coordonnées) :", src.crs)
+				print(" - Métadonnées :", src.meta)
+		except Exception as e:
+			print(" Erreur lors de l’ouverture du fichier :", e)
 
 
 #Début du traitement
@@ -72,21 +72,21 @@ for tif in tiff_files:
 image_path = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/Ortho_nocturne_CG_20200325.tif"
 
 try:
- with rasterio.open(image_path) as src:
- # Lire les données de l'image
- image_data = src.read()
- # Lire les métadonnées
- metadata = src.meta
- # Lire la transformation affine
- transform = src.transform
- # Lire les coordonnées du système de référence
- crs = src.crs
+	with rasterio.open(image_path) as src:
+		# Lire les données de l'image
+		image_data = src.read()
+		# Lire les métadonnées
+		metadata = src.meta
+		# Lire la transformation affine
+		transform = src.transform
+		# Lire les coordonnées du système de référence
+		crs = src.crs
 
- print("Lecture réussie ")
- print("Métadonnées :", metadata)
- print("Système de référence :", crs)
+		print("Lecture réussie ")
+		print("Métadonnées :", metadata)
+		print("Système de référence :", crs)
 except Exception as e:
- print(f"Erreur lors de l'ouverture du fichier : {e}")
+	print(f"Erreur lors de l'ouverture du fichier : {e}")
 
 #ouvrir l'image satellite
 with rasterio.open(image_path) as src:
@@ -258,20 +258,20 @@ plt.show()
 #a) calculer le flux par tuile
 
 def calculer_flux_par_tuile(flux_image, tuile_size=500):
- rows, cols = flux_image.shape
- flux_par_tuile = []
- 
- for i in range(0, rows, tuile_size):
- for j in range(0, cols, tuile_size):
- tuile = flux_image[i:i+tuile_size, j:j+tuile_size]
- flux_total = np.sum(tuile)
- flux_par_tuile.append({
- "ligne": i,
- "colonne": j,
- "flux_lumens": flux_total
- })
- 
- return flux_par_tuile
+	rows, cols = flux_image.shape
+	flux_par_tuile = []
+	
+	for i in range(0, rows, tuile_size):
+		for j in range(0, cols, tuile_size):
+			tuile = flux_image[i:i+tuile_size, j:j+tuile_size]
+			flux_total = np.sum(tuile)
+			flux_par_tuile.append({
+				"ligne": i,
+				"colonne": j,
+				"flux_lumens": flux_total
+			})
+	
+	return flux_par_tuile
 
 # Appel
 tuiles = calculer_flux_par_tuile(flux_lumineux, tuile_size=500)
@@ -453,25 +453,25 @@ print(f"Image de l'indice de Bortle enregistrée sous : {output_bortle}")
 
 
 def sqm_to_bortle(sqm):
- # Valeurs approximatives basées sur correspondance empirique
- if sqm >= 21.75:
- return 1
- elif sqm >= 21.0:
- return 2
- elif sqm >= 20.0:
- return 3
- elif sqm >= 19.0:
- return 4
- elif sqm >= 18.0:
- return 5
- elif sqm >= 17.0:
- return 6
- elif sqm >= 16.0:
- return 7
- elif sqm >= 15.0:
- return 8
- else:
- return 9
+	# Valeurs approximatives basées sur correspondance empirique
+	if sqm >= 21.75:
+		return 1
+	elif sqm >= 21.0:
+		return 2
+	elif sqm >= 20.0:
+		return 3
+	elif sqm >= 19.0:
+		return 4
+	elif sqm >= 18.0:
+		return 5
+	elif sqm >= 17.0:
+		return 6
+	elif sqm >= 16.0:
+		return 7
+	elif sqm >= 15.0:
+		return 8
+	else:
+		return 9
 
 # Application sur une carte (vectorisée)
 bortle_index = np.vectorize(sqm_to_bortle)(sqm_index)
@@ -542,10 +542,10 @@ with open(gitignore_path, "r") as f:
  lines = f.readlines()
 
 with open(gitignore_path, "a") as f:
- for result_file in result_files:
- pattern = f"/Result/{result_file}\n"
- if pattern not in lines:
- f.write(pattern)
+	for result_file in result_files:
+		pattern = f"/Result/{result_file}\n"
+		if pattern not in lines:
+			f.write(pattern)
 print("Fichiers de résultats ajoutés au .gitignore.")
 
 #calcule 7 indicateur: la première approche de l'indicateur du spectre des sources lumlineuses
@@ -697,35 +697,35 @@ path_img = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/Ortho_nocturne_CG_2
 path_mns = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/mnt2015_t2018.geojson" # GeoJSON -> Raster
 
 def geojson_to_raster(path_geojson, pixel_size=10):
- gdf = gpd.read_file(path_geojson)
+	gdf = gpd.read_file(path_geojson)
 
- if gdf.empty:
- raise ValueError("Le fichier GeoJSON ne contient aucune géométrie.")
+	if gdf.empty:
+		raise ValueError("Le fichier GeoJSON ne contient aucune géométrie.")
 
- if gdf.crs is None:
- raise ValueError("Le fichier GeoJSON n'a pas de système de coordonnées (CRS).")
- elif not gdf.crs.is_projected:
- print("Reprojection en EPSG:3857 (Web Mercator)...")
- gdf = gdf.to_crs(epsg=3857)
+	if gdf.crs is None:
+		raise ValueError("Le fichier GeoJSON n'a pas de système de coordonnées (CRS).")
+	elif not gdf.crs.is_projected:
+		print("Reprojection en EPSG:3857 (Web Mercator)...")
+		gdf = gdf.to_crs(epsg=3857)
 
- bounds = gdf.total_bounds # [minx, miny, maxx, maxy]
- width = int((bounds[2] - bounds[0]) / pixel_size)
- height = int((bounds[3] - bounds[1]) / pixel_size)
+	bounds = gdf.total_bounds # [minx, miny, maxx, maxy]
+	width = int((bounds[2] - bounds[0]) / pixel_size)
+	height = int((bounds[3] - bounds[1]) / pixel_size)
 
- if width <= 0 or height <= 0:
- raise ValueError(f"Dimensions invalides : width={width}, height={height}. Vérifie ton GeoJSON.")
+	if width <= 0 or height <= 0:
+		raise ValueError(f"Dimensions invalides : width={width}, height={height}. Vérifie ton GeoJSON.")
 
- transform = from_origin(bounds[0], bounds[3], pixel_size, pixel_size)
+	transform = from_origin(bounds[0], bounds[3], pixel_size, pixel_size)
 
- raster = rasterize(
- [(geom, 1) for geom in gdf.geometry if geom.is_valid],
- out_shape=(height, width),
- transform=transform,
- fill=0,
- dtype='float32'
- )
+	raster = rasterize(
+		[(geom, 1) for geom in gdf.geometry if geom.is_valid],
+		out_shape=(height, width),
+		transform=transform,
+		fill=0,
+		dtype='float32'
+	)
 
- return raster, transform, gdf.crs
+	return raster, transform, gdf.crs
 
 
 # Charger l'image satellite
@@ -833,7 +833,13 @@ print(f"Les zones sombres détectées ont été enregistrées sous : {output_zon
 import numpy as np
 import rasterio
 import matplotlib.pyplot as plt
-from sklearn.ensemble import RandomForestClassifier
+import subprocess
+import sys
+try:
+	from sklearn.ensemble import RandomForestClassifier
+except ImportError:
+	subprocess.check_call([sys.executable, "-m", "pip", "install", "scikit-learn"])
+	from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 from joblib import dump
@@ -842,8 +848,8 @@ path_red_corr = "/Users/solanemercier/Desktop/TER/Data/Result/corrected_red.tif"
 path_illumination = "/Users/solanemercier/Desktop/TER/Data/Result/illumination_topographique.tif"
 
 def read_raster(path):
- with rasterio.open(path) as src:
- return src.read(1).astype(np.float32), src.transform, src.crs
+	with rasterio.open(path) as src:
+		return src.read(1).astype(np.float32), src.transform, src.crs
 
 corrected_red, transform, crs = read_raster(path_red_corr)
 illumination, _, _ = read_raster(path_illumination)
