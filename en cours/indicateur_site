@@ -6,9 +6,24 @@
 import os
 import glob
 import matplotlib.pyplot as plt
+import traceback
+import geopandas as gpd
+from rasterio.transform import from_origin
+from rasterio.features import rasterize
+import pandas as pd
+from shapely.geometry import Point
+import geopandas as gpd
+import pandas as pd
+import rasterio
+from shapely.geometry import Point
+from rasterio.mask import mask
+import glob
+import numpy as np
+from shapely.geometry import box
+from shapely.geometry import mapping
 
 def get_tiff_files_from_desktop():
-    desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+    desktop_path = os.path.join(os.path.expanduser("~"), "Q:")
     tiff_files = glob.glob(os.path.join(desktop_path, "*.tif"))
     return tiff_files
 
@@ -22,9 +37,114 @@ def get_tiff_files_from_desktop_or_folder(folder_path=None):
     else:
         return get_tiff_files_from_desktop()
 
+def traitement_buffer(gdf, image_path, path, rayon):
+    image_crs = None
+    raster_bounds = None
+    with rasterio.open(image_path) as src:
+        raster_bounds = src.bounds
+        image_crs = src.crs
+
+    raster_polygon = box(raster_bounds.left, raster_bounds.bottom, raster_bounds.right, raster_bounds.top)
+    
+    gdf_buffered = gdf.to_crs(epsg=3857).copy()
+    gdf_buffered["geometry"] = gdf_buffered.buffer(1000)
+    gdf_buffered = gdf_buffered.to_crs(image_crs)
+
+    gdf_buffered = gdf_buffered[gdf_buffered.geometry.is_valid & (~gdf_buffered.geometry.is_empty)]
+    gdf_buffered = gdf_buffered[gdf_buffered.geometry.intersects(raster_polygon)]
+
+    output_dir = os.path.abspath(os.path.join(path, "result/buffers_individuels" + str(rayon)))
+    os.makedirs(output_dir, exist_ok=True)
+    luminance_results = []
+    idx = 0
+    with rasterio.open(image_path) as src:
+        original_nodata = src.nodata
+        if original_nodata is None:
+            original_nodata = 0  # fallback if nodata is not set
+
+        for idx, row in gdf_buffered.iterrows():
+            geom = row.geometry
+            if not geom.is_valid or geom.is_empty:
+                continue
+            geom_mapping = [mapping(geom)]
+            out_img, out_trans = mask(src, geom_mapping, crop=True, filled=True, nodata=original_nodata)
+            out_meta_ind = src.meta.copy()
+            out_meta_ind.update({
+                "driver": "GTiff",
+                "height": out_img.shape[1],
+                "width": out_img.shape[2],
+                "transform": out_trans,
+                "count": out_img.shape[0],
+                "nodata": original_nodata
+            })
+            site_id = row["num_site_evolville"]
+            out_path = os.path.join(output_dir, f"buffer{rayon}m_{site_id}.tif")
+            with rasterio.open(out_path, "w", **out_meta_ind) as dest:
+                dest.write(out_img)
+            print(f"Raster {rayon}m découpé sauvegardé pour le site {site_id} : {out_path}")
+
+            img = out_img
+            # luminance
+            if img.shape[0] >= 3:
+                red = img[0].astype(np.float32)
+                green = img[1].astype(np.float32)
+                blue = img[2].astype(np.float32)
+                # Calcul de la luminance relative selon REC.709
+                luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+            else:
+                luminance = img[0].astype(np.float32)
+            # Masquer les valeurs nodata
+            nodata = src.nodata
+            if nodata is not None:
+                mask_bis = (img[0] != nodata)
+                valid_luminance = luminance[mask_bis]
+            else:
+                mask_bis = np.ones_like(luminance, dtype=bool)
+                valid_luminance = luminance
+
+            # Normalisation entre 0 et 1 (sur les pixels valides)
+            if valid_luminance.size > 0:
+                luminance_norm = np.zeros_like(luminance, dtype=np.float32)
+                min_val = valid_luminance.min()
+                max_val = valid_luminance.max()
+                if max_val > min_val:
+                    luminance_norm[mask_bis] = (luminance[mask_bis] - min_val) / (max_val - min_val)
+                else:
+                    luminance_norm[mask_bis] = 0
+            else:
+                luminance_norm = np.zeros_like(luminance, dtype=np.float32)
+
+            # Sauvegarde du raster de luminance normalisée
+            luminance_out_path = os.path.join(output_dir, f"luminance_buffer{rayon}m_{site_id}.tif")
+            meta = src.meta.copy()
+            meta.update({
+                "driver": "GTiff",
+                "count": 1,
+                "dtype": "float32"
+            })
+            with rasterio.open(luminance_out_path, "w", **meta) as dst:
+                dst.write(luminance_norm, 1)
+            print(f"Luminance normalisée sauvegardée : {luminance_out_path}")
+
+            # Stocker la moyenne de luminance normalisée pour ce buffer
+            mean_luminance = luminance_norm[mask_bis].mean() if mask_bis.sum() > 0 else np.nan
+            luminance_results.append({
+                "site": f"site_{str(site_id)}",
+                "mean_luminance_norm": mean_luminance
+            })
+            idx += 1
+    df_luminance = pd.DataFrame(luminance_results)
+    print(f"Résumé de la luminance normalisée par buffer {rayon}m :")
+    print(df_luminance)
+
+
+
 if __name__ == "__main__":
+    directory = os.path.dirname(os.path.abspath(__file__))
+
     # Main execution block to avoid accidental infinite execution if imported elsewhere
-    ter_folder_path = os.path.join(os.path.expanduser("~"), "Q:", "MERCIER" , "Code", "Jilin_2020")
+    # ter_folder_path = os.path.join(os.path.expanduser("~"), "Q:", "MERCIER" , "Code", "Jilin_2020")
+    ter_folder_path = os.path.abspath(os.path.join(directory, "../../Jilin_2020/"))
     tiff_files = get_tiff_files_from_desktop_or_folder(ter_folder_path)
 
     for tif in tiff_files:
@@ -46,7 +166,9 @@ if __name__ == "__main__":
             except Exception as e:
                 print(" Erreur lors de l’ouverture du fichier :", e)
 
-    image_path = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/Ortho_nocturne_CG_20200325.tif"
+    # image_path = r"Q:\MERCIER\Code\Jilin_2020\Ortho_nocturne_CG_20200325.tif"
+    # image_path_rel = "../../Jilin_2020/Ortho_nocturne_CG_20200325.tif"
+    image_path = os.path.abspath(os.path.join(ter_folder_path, "Ortho_nocturne_CG_20200325.tif"))
 
     try:
         with rasterio.open(image_path) as src:
@@ -64,13 +186,6 @@ if __name__ == "__main__":
             print("Système de référence :", crs)
     except Exception as e:
         print(f"Erreur lors de l'ouverture du fichier : {e}")
-
-
-    import geopandas as gpd
-    from rasterio.transform import from_origin
-    from rasterio.features import rasterize
-    import pandas as pd
-    from shapely.geometry import Point
 
     def geojson_to_raster(path_geojson, pixel_size=10):
         gdf = gpd.read_file(path_geojson)
@@ -104,21 +219,18 @@ if __name__ == "__main__":
         return raster, transform, gdf.crs
 
     #chemin pour le fichier CSV
-    image_path = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/Ortho_nocturne_CG_20200325.tif"
-    csv_path = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/donnée_lampadaire/XY_site (1).csv"
+    image_path =  os.path.abspath(os.path.join(ter_folder_path, "Ortho_nocturne_CG_20200325.tif"))
+    csv_path =  os.path.abspath(os.path.join(ter_folder_path, "donnée_lampadaire\XY_site (1).csv"))
+    print("Chemin du fichier CSV :", csv_path)
 
 
     # Ce bloc est redondant avec le bloc suivant qui traite le CSV, la création des buffers et la rasterisation.
     # Il peut être supprimé pour éviter la confusion et les traitements inutiles.
 
-    import geopandas as gpd
-    import pandas as pd
-    import rasterio
-    from shapely.geometry import Point
-    from rasterio.mask import mask
+
 
     # === 1. Charger le CSV correctement (séparateur ;) ===
-    csv_path = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/donnée_lampadaire/XY_site (1).csv"
+    # csv_path = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/donnée_lampadaire/XY_site (1).csv"
     df = pd.read_csv(csv_path, sep=";")
 
     # === 2. Création du GeoDataFrame à partir de x et y ===
@@ -127,11 +239,19 @@ if __name__ == "__main__":
     # === 3. Reprojection en projection métrique (pour le buffer) ===
     gdf_projected = gdf.to_crs(epsg=3857)
 
+    traitement_buffer(gdf, image_path, os.path.abspath(os.path.join(directory, "result")), 500)
+    print("Fin de traitement des buffers")
+
+
+
+
+
+'''
     # === 4. Appliquer le buffer de 50 mètres autour de chaque point ===
     gdf_projected["geometry"] = gdf_projected.buffer(50)
 
     # === 5. Reprojetter les buffers dans le CRS de l’image ===
-    image_path = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/Ortho_nocturne_CG_20200325.tif"
+    # image_path = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/Ortho_nocturne_CG_20200325.tif"
     from shapely.geometry import box
     with rasterio.open(image_path) as src:
         raster_bounds = src.bounds
@@ -145,7 +265,7 @@ if __name__ == "__main__":
     gdf_buffered = gdf_buffered[gdf_buffered.geometry.intersects(raster_polygon)]
 
     # === 6. Masquer l’image avec le buffer ===
-    from shapely.geometry import mapping
+   
     # Filtrer les géométries valides et non vides
     valid_geometries = [geom for geom in gdf_buffered.geometry if geom.is_valid and not geom.is_empty]
     geometries = [mapping(geom) for geom in valid_geometries]
@@ -171,7 +291,7 @@ if __name__ == "__main__":
     })
 
     # === 8. Enregistrer l’image masquée ===
-    output_path = "/Users/solanemercier/Desktop/TER/Data/Result/image_buffer_sites.tif"
+    output_path = os.path.abspath(os.path.join(directory, "result/image_buffer_sites.tif"))
     with rasterio.open(output_path, "w", **out_meta) as dest:
         dest.write(out_image)
 
@@ -183,7 +303,7 @@ if __name__ == "__main__":
     plt.axis('off')
     plt.show()
     # Découper le raster pour chaque buffer et enregistrer chaque découpe individuellement
-    output_dir = "/Users/solanemercier/Desktop/TER/Data/Result/buffers_individuels"
+    output_dir = os.path.abspath(os.path.join(directory, "result/buffers_individuels"))
     os.makedirs(output_dir, exist_ok=True)
 
     with rasterio.open(image_path) as src:
@@ -212,8 +332,7 @@ if __name__ == "__main__":
                 print(f"Erreur lors du découpage du buffer {row['num_site_evolville']} : {e}")
 
     # Afficher les buffers individuels
-    import glob
-    import numpy as np
+
     buffer_files = glob.glob(os.path.join(output_dir, "*.tif"))
     for buffer_file in buffer_files:
         with rasterio.open(buffer_file) as src:
@@ -241,7 +360,7 @@ if __name__ == "__main__":
     gdf_buffered_1000m = gdf_buffered_1000m[gdf_buffered_1000m.geometry.intersects(raster_polygon)]
 
     # 3. Découper le raster pour chaque buffer de 1000m et enregistrer individuellement
-    output_dir_1000m = "/Users/solanemercier/Desktop/TER/Data/Result/buffers_individuels_1000m"
+    output_dir_1000m = os.path.abspath(os.path.join(directory, "result/buffers_individuels_1000m"))
     os.makedirs(output_dir_1000m, exist_ok=True)
 
     with rasterio.open(image_path) as src:
@@ -357,7 +476,7 @@ if __name__ == "__main__":
 
     # Découper une emprise de 200m centrée sur chaque site à partir des buffers 1000m
 
-    output_dir_200m = "/Users/solanemercier/Desktop/TER/Data/Result/buffers_individuels_200m"
+    output_dir_200m = os.path.abspath(os.path.join(directory, "result/buffers_individuels_200m"))
     os.makedirs(output_dir_200m, exist_ok=True)
 
     # On repart du CSV pour avoir les coordonnées des sites
@@ -374,23 +493,22 @@ if __name__ == "__main__":
             if not buffer_200m.is_valid or buffer_200m.is_empty:
                 continue
             geom_mapping = [mapping(buffer_200m)]
-            try:
-                out_img, out_trans = mask(src, geom_mapping, crop=True, filled=True, nodata=original_nodata)
-                out_meta_ind = src.meta.copy()
-                out_meta_ind.update({
-                    "driver": "GTiff",
-                    "height": out_img.shape[1],
-                    "width": out_img.shape[2],
-                    "transform": out_trans,
-                    "count": out_img.shape[0],
-                    "nodata": original_nodata
-                })
-                out_path = os.path.join(output_dir_200m, f"buffer200m_{site_id}.tif")
-                with rasterio.open(out_path, "w", **out_meta_ind) as dest:
-                    dest.write(out_img)
-                print(f"Raster 200m découpé sauvegardé pour le site {site_id} : {out_path}")
-            except Exception as e:
-                print(f"Erreur lors du découpage du buffer 200m {site_id} : {e}")
+            
+            out_img, out_trans = mask(src, geom_mapping, crop=True, filled=True, nodata=original_nodata)
+            out_meta_ind = src.meta.copy()
+            out_meta_ind.update({
+                "driver": "GTiff",
+                "height": out_img.shape[1],
+                "width": out_img.shape[2],
+                "transform": out_trans,
+                "count": out_img.shape[0],
+                "nodata": original_nodata
+            })
+            out_path = os.path.join(output_dir_200m, f"buffer200m_{site_id}.tif")
+            with rasterio.open(out_path, "w", **out_meta_ind) as dest:
+                dest.write(out_img)
+            print(f"Raster 200m découpé sauvegardé pour le site {site_id} : {out_path}")
+            
     #fin d'exécution
     print("Tous les buffers de 200m ont été découpés et sauvegardés.")
     # Afficher les buffers individuels de 200m
@@ -410,6 +528,4 @@ if __name__ == "__main__":
             plt.show()
     #fin d'exécution
     #fin d'exécution
-    print("Fin de l'exécution du script.")
-    # Le script s'arrête ici, il n'y a pas de boucle infinie.
-    print("Fin de l'exécution du script.")
+    '''
