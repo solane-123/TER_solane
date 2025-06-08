@@ -69,7 +69,7 @@ for tif in tiff_files:
 #Début du traitement
 
 
-image_path = "/Users/solanemercier/Desktop/TER/Data/Jilin_2020/Ortho_nocturne_CG_20200325.tif"
+image_path = r"Q:\MERCIER\Code\Jilin_2020\Ortho_nocturne_CG_20200325.tif"
 
 try:
 	with rasterio.open(image_path) as src:
