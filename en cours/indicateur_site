@@ -84,7 +84,7 @@ def luminance(img, output_dir, rayon, site_id, luminance_results):
     })
 
 # Fonction pour calculer l'indicateur du flux lumineux
-def flux_lumineux(img, transform):
+def flux_lumineux(img, output_dir, rayon, site_id, flux_lumineux_results):
     res_x, res_y = transform[0], -transform[4]
     pixel_area = res_x * res_y 
 
@@ -115,17 +115,11 @@ def flux_lumineux(img, transform):
         dst.write(flux_lumineux, 1)
     print(f"Flux lumineux sauvegradé : {flux_lumineux_out_path}")
     
-    # Stocker la moyenne du flux lumineux pour ce buffer
-    mean_flux_lumineux = flux_lumineux[mask_bis].mean() if mask_bis.sum() > 0 else np.nan
-    flux_lumineux_results.append({
-        "site": f"site_{str(site_id)}",
-        "mean_flux_lumineux": mean_flux_lumineux
-    })
 
 
     
 # Fonction estimation de la luminance réelle
-def estimated_luminance(img, transform):
+def estimated_luminance(img, output_dir, rayon, site_id, estimated_luminance_results):
     res_x, res_y = transform[0], -transform[4]
     pixel_area = res_x * res_y
 # Ici : on suppose que 1.0 (blanc pur) ≈ 10 cd/m² (ex : lampadaire LED urbain typique)
@@ -151,15 +145,10 @@ def estimated_luminance(img, transform):
         "dtype": "float32"
     })
     with rasterio.open(estimated_luminance_out_path, "w", **meta) as dst:
-        dst.write(flux_lumineux, 1)
+        dst.write(estimated_luminance, 1)
     print(f"Luminance réel sauvegradé : {estimated_luminance_out_path}")
     
-    # Stocker la moyenne du flux lumineux pour ce buffer
-    mean_estimated_luminance = estimated_luminance[mask_bis].mean() if mask_bis.sum() > 0 else np.nan
-    estimated_luminance_results.append({
-        "site": f"site_{str(site_id)}",
-        "mean_estimated_luminance": mean_estimated_luminance
-    })
+
 
     
 
@@ -184,6 +173,8 @@ def traitement_buffer(gdf, image_path, path, rayon):
     output_dir = os.path.abspath(os.path.join(path, "result/buffers_individuels" + str(rayon)))
     os.makedirs(output_dir, exist_ok=True)
     luminance_results = []
+    flux_lumineux_results = []
+    estimated_luminance_results = []
     with rasterio.open(image_path) as src:
         original_nodata = src.nodata
         if original_nodata is None:
@@ -211,7 +202,8 @@ def traitement_buffer(gdf, image_path, path, rayon):
             print(f"Raster {rayon}m découpé sauvegardé pour le site {site_id} : {out_path}")
             img = out_img
             luminance(img, output_dir, rayon, site_id, luminance_results)
-            flux_lumineux(img, out_trans)
+            flux_lumineux(img, output_dir, rayon, site_id, flux_lumineux_results)
+            estimated_luminance(img, output_dir, rayon, site_id, estimated_luminance_results)
             
     df_luminance = pd.DataFrame(luminance_results)
     print(f"Résumé de la luminance normalisée par buffer {rayon}m :")
