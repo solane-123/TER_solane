@@ -32,7 +32,8 @@ def get_tiff_files_from_desktop_or_folder(folder_path=None):
         return get_tiff_files_from_folder(folder_path)
     else:
         return get_tiff_files_from_desktop()
-    
+
+ #fonciton pour calculer la luminance relative   
 def luminance(img, output_dir, rayon, site_id, luminance_results):
     if img.shape[0] >= 3:
         red = img[0].astype(np.float32)
@@ -82,6 +83,7 @@ def luminance(img, output_dir, rayon, site_id, luminance_results):
         "mean_luminance_norm": mean_luminance
     })
 
+# Fonction pour calculer l'indicateur du flux lumineux
 def flux_lumineux(img, transform):
     res_x, res_y = transform[0], -transform[4]
     pixel_area = res_x * res_y 
