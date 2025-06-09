@@ -32,7 +32,8 @@ def get_tiff_files_from_desktop_or_folder(folder_path=None):
         return get_tiff_files_from_folder(folder_path)
     else:
         return get_tiff_files_from_desktop()
-    
+
+ #fonciton pour calculer la luminance relative   
 def luminance(img, output_dir, rayon, site_id, luminance_results):
     if img.shape[0] >= 3:
         red = img[0].astype(np.float32)
@@ -82,7 +83,8 @@ def luminance(img, output_dir, rayon, site_id, luminance_results):
         "mean_luminance_norm": mean_luminance
     })
 
-def flux_lumineux(img, transform):
+# Fonction pour calculer l'indicateur du flux lumineux
+def flux_lumineux(img, output_dir, rayon, site_id, flux_lumineux_results):
     res_x, res_y = transform[0], -transform[4]
     pixel_area = res_x * res_y 
 
@@ -100,8 +102,57 @@ def flux_lumineux(img, transform):
     print(f" - Moyenne : {np.nanmean(flux_lumineux):.2f} lm")
     print(f" - Max : {np.nanmax(flux_lumineux):.2f} lm")
     print(f" - Min : {np.nanmin(flux_lumineux):.2f} lm")
-    # Affichage de l'image du flux lumineux
     
+    # Sauvegarde du raster du flux lumineux
+    flux_lumineux_out_path = os.path.join(output_dir, f"flux_lumineux_buffer{rayon}m_{site_id}.tif")
+    meta = src.meta.copy()
+    meta.update({
+        "driver": "GTiff",
+        "count": 1,
+        "dtype": "float32"
+    })
+    with rasterio.open(flux_lumineux_out_path, "w", **meta) as dst:
+        dst.write(flux_lumineux, 1)
+    print(f"Flux lumineux sauvegradé : {flux_lumineux_out_path}")
+    
+
+
+    
+# Fonction estimation de la luminance réelle
+def estimated_luminance(img, output_dir, rayon, site_id, estimated_luminance_results):
+    res_x, res_y = transform[0], -transform[4]
+    pixel_area = res_x * res_y
+# Ici : on suppose que 1.0 (blanc pur) ≈ 10 cd/m² (ex : lampadaire LED urbain typique)
+    # Conversion en luminance approximée
+    luminance_relative = np.mean(img, axis=0) / 255.0
+    estimated_luminance = luminance_relative * 10  # cd/m², échelle arbitraire
+    pixel_area = abs(1.4499991727673662 * -1.4499991727673662)
+    # Calcul de la luminance estimée
+    estimated_luminance = estimated_luminance * pixel_area * np.pi
+
+    # Afficher les statistiques de luminance estimée
+    print("Statistiques de luminance estimée (cd/m²):")
+    print(f" - Moyenne : {np.nanmean(estimated_luminance):.2f} cd/m²")
+    print(f" - Max : {np.nanmax(estimated_luminance):.2f} cd/m²")
+    print(f" - Min : {np.nanmin(estimated_luminance):.2f} cd/m²")
+    
+    # Sauvegarde du raster du flux lumineux
+    estimated_luminance_out_path = os.path.join(output_dir, f"luminance_reel_buffer{rayon}m_{site_id}.tif")
+    meta = src.meta.copy()
+    meta.update({
+        "driver": "GTiff",
+        "count": 1,
+        "dtype": "float32"
+    })
+    with rasterio.open(estimated_luminance_out_path, "w", **meta) as dst:
+        dst.write(estimated_luminance, 1)
+    print(f"Luminance réel sauvegradé : {estimated_luminance_out_path}")
+    
+
+
+    
+
+
 
 def traitement_buffer(gdf, image_path, path, rayon):
     image_crs = None
@@ -122,6 +173,8 @@ def traitement_buffer(gdf, image_path, path, rayon):
     output_dir = os.path.abspath(os.path.join(path, "result/buffers_individuels" + str(rayon)))
     os.makedirs(output_dir, exist_ok=True)
     luminance_results = []
+    flux_lumineux_results = []
+    estimated_luminance_results = []
     with rasterio.open(image_path) as src:
         original_nodata = src.nodata
         if original_nodata is None:
@@ -149,7 +202,8 @@ def traitement_buffer(gdf, image_path, path, rayon):
             print(f"Raster {rayon}m découpé sauvegardé pour le site {site_id} : {out_path}")
             img = out_img
             luminance(img, output_dir, rayon, site_id, luminance_results)
-            flux_lumineux(img, out_trans)
+            flux_lumineux(img, output_dir, rayon, site_id, flux_lumineux_results)
+            estimated_luminance(img, output_dir, rayon, site_id, estimated_luminance_results)
             
     df_luminance = pd.DataFrame(luminance_results)
     print(f"Résumé de la luminance normalisée par buffer {rayon}m :")
