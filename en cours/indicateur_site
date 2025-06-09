@@ -102,8 +102,68 @@ def flux_lumineux(img, transform):
     print(f" - Moyenne : {np.nanmean(flux_lumineux):.2f} lm")
     print(f" - Max : {np.nanmax(flux_lumineux):.2f} lm")
     print(f" - Min : {np.nanmin(flux_lumineux):.2f} lm")
-    # Affichage de l'image du flux lumineux
     
+    # Sauvegarde du raster du flux lumineux
+    flux_lumineux_out_path = os.path.join(output_dir, f"flux_lumineux_buffer{rayon}m_{site_id}.tif")
+    meta = src.meta.copy()
+    meta.update({
+        "driver": "GTiff",
+        "count": 1,
+        "dtype": "float32"
+    })
+    with rasterio.open(flux_lumineux_out_path, "w", **meta) as dst:
+        dst.write(flux_lumineux, 1)
+    print(f"Flux lumineux sauvegradé : {flux_lumineux_out_path}")
+    
+    # Stocker la moyenne du flux lumineux pour ce buffer
+    mean_flux_lumineux = flux_lumineux[mask_bis].mean() if mask_bis.sum() > 0 else np.nan
+    flux_lumineux_results.append({
+        "site": f"site_{str(site_id)}",
+        "mean_flux_lumineux": mean_flux_lumineux
+    })
+
+
+    
+# Fonction estimation de la luminance réelle
+def estimated_luminance(img, transform):
+    res_x, res_y = transform[0], -transform[4]
+    pixel_area = res_x * res_y
+# Ici : on suppose que 1.0 (blanc pur) ≈ 10 cd/m² (ex : lampadaire LED urbain typique)
+    # Conversion en luminance approximée
+    luminance_relative = np.mean(img, axis=0) / 255.0
+    estimated_luminance = luminance_relative * 10  # cd/m², échelle arbitraire
+    pixel_area = abs(1.4499991727673662 * -1.4499991727673662)
+    # Calcul de la luminance estimée
+    estimated_luminance = estimated_luminance * pixel_area * np.pi
+
+    # Afficher les statistiques de luminance estimée
+    print("Statistiques de luminance estimée (cd/m²):")
+    print(f" - Moyenne : {np.nanmean(estimated_luminance):.2f} cd/m²")
+    print(f" - Max : {np.nanmax(estimated_luminance):.2f} cd/m²")
+    print(f" - Min : {np.nanmin(estimated_luminance):.2f} cd/m²")
+    
+    # Sauvegarde du raster du flux lumineux
+    estimated_luminance_out_path = os.path.join(output_dir, f"luminance_reel_buffer{rayon}m_{site_id}.tif")
+    meta = src.meta.copy()
+    meta.update({
+        "driver": "GTiff",
+        "count": 1,
+        "dtype": "float32"
+    })
+    with rasterio.open(estimated_luminance_out_path, "w", **meta) as dst:
+        dst.write(flux_lumineux, 1)
+    print(f"Luminance réel sauvegradé : {estimated_luminance_out_path}")
+    
+    # Stocker la moyenne du flux lumineux pour ce buffer
+    mean_estimated_luminance = estimated_luminance[mask_bis].mean() if mask_bis.sum() > 0 else np.nan
+    estimated_luminance_results.append({
+        "site": f"site_{str(site_id)}",
+        "mean_estimated_luminance": mean_estimated_luminance
+    })
+
+    
+
+
 
 def traitement_buffer(gdf, image_path, path, rayon):
     image_crs = None
